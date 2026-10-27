@@ -1,8 +1,8 @@
-import { MATERIALS, MAT, INSTRUMENTS, noteName, midiFor, instrumentFromBelow } from './data.js';
-import { World, Sim, DX, DY, ZMIN, ZMAX, isConductive } from './engine.js';
-import { drawBackground, drawCell, iconCanvas, THEMES } from './render.js';
-import { audio, playNote } from './sound.js';
-import { helpHTML, wireHelp } from './guide.js';
+import { MATERIALS, MAT, INSTRUMENTS, noteName, midiFor, instrumentFromBelow } from './data.js?v=0.2.4';
+import { World, Sim, DX, DY, ZMIN, ZMAX, isConductive } from './engine.js?v=0.2.4';
+import { drawBackground, drawCell, iconCanvas, THEMES } from './render.js?v=0.2.4';
+import { audio, playNote } from './sound.js?v=0.2.4';
+import { helpHTML, wireHelp } from './guide.js?v=0.2.4';
 
 const $ = s => document.querySelector(s);
 const DIRS = ['Nord', 'Est', 'Sud', 'Ouest'];
@@ -236,7 +236,7 @@ function updateReadout() {
 
 // ---------- Dessin ----------
 // Marge autour du terrain : on peut le déplacer au-delà de ses bords
-const pad = () => ({ x: Math.round(wrap.clientWidth * 0.6), y: Math.round(wrap.clientHeight * 0.6) });
+const pad = () => ({ x: Math.round(wrap.clientWidth * 0.9), y: Math.round(wrap.clientHeight * 0.9) });
 
 function resize() {
   const dpr = Math.min(2, window.devicePixelRatio || 1);

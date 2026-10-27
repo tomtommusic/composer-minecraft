@@ -1,5 +1,5 @@
 // Guide intégré (banque d'information). Bêta : le contenu va grandir.
-import { MATERIALS, INSTRUMENTS, noteName } from './data.js';
+import { MATERIALS, INSTRUMENTS, noteName } from './data.js?v=0.2.4';
 
 const FIGS = [
   { id: 'dc', name: 'double croche', per: 0.25 },

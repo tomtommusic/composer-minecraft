@@ -2,7 +2,7 @@
 // Les états allumé/éteint ne reposent jamais seulement sur la couleur :
 // halo lumineux, contour blanc, rayons, traits pleins vs pointillés.
 
-import { MAT, noteName, midiFor, INSTRUMENTS, instrumentFromBelow } from './data.js';
+import { MAT, noteName, midiFor, INSTRUMENTS, instrumentFromBelow } from './data.js?v=0.2.4';
 
 const DX = [0, 1, 0, -1, 0, 0], DY = [-1, 0, 1, 0, 0, 0];
 
