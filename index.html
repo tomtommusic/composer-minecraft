@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Composer for Minecraft</title>
+<meta name="description" content="Composer de la musique avec des blocs musicaux et de la redstone simulés.">
+<meta name="theme-color" content="#14181d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Composer">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="logo" aria-hidden="true"></span><span class="title">Composer <small>for Minecraft</small></span><span class="beta">Bêta</span></div>
+  <input id="projName" class="projname" aria-label="Nom du projet" maxlength="60">
+  <div class="bar-group">
+    <details class="menu" id="fileMenu">
+      <summary>Fichier ▾</summary>
+      <div class="menu-pop">
+        <button data-act="new">Nouveau projet</button>
+        <button data-act="open">Ouvrir un projet…</button>
+        <button data-act="dup">Dupliquer ce projet</button>
+        <hr>
+        <button data-act="export">Exporter le fichier (.cfm)</button>
+        <button data-act="import">Importer un fichier…</button>
+        <hr>
+        <button data-act="demo">Charger l’exemple « Au clair de la lune »</button>
+        <p class="muted" style="font-size:11px;margin:6px 10px 2px">Outil non officiel, sans lien avec Mojang ni Microsoft.</p>
+      </div>
+    </details>
+    <details class="menu" id="viewMenu">
+      <summary>Affichage ▾</summary>
+      <div class="menu-pop">
+        <label>Plan de travail
+          <select id="theme"></select>
+        </label>
+        <label>Édition
+          <select id="edition">
+            <option value="java">Java Edition</option>
+            <option value="bedrock">Bedrock / Education (Bêta)</option>
+          </select>
+        </label>
+        <label>Noms des notes
+          <select id="lang">
+            <option value="fr">Do Ré Mi</option>
+            <option value="en">C D E</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="showNames" checked> Afficher les notes sur les blocs</label>
+        <label class="check"><input type="checkbox" id="showPower"> Afficher la puissance (0-15)</label>
+      </div>
+    </details>
+    <button class="icon" id="undo" title="Annuler (Ctrl+Z)" aria-label="Annuler">↶</button>
+    <button class="icon" id="redo" title="Rétablir (Ctrl+Maj+Z)" aria-label="Rétablir">↷</button>
+    <button class="icon" id="zoomOut" title="Zoom arrière" aria-label="Zoom arrière">−</button>
+    <button class="icon" id="zoomIn" title="Zoom avant" aria-label="Zoom avant">+</button>
+    <button id="helpBtn" class="ghost">Guide</button>
+  </div>
+</header>
+
+<main class="workarea">
+  <div id="stageWrap" class="stage-wrap"><canvas id="stage"></canvas></div>
+  <aside id="inspector" class="inspector" hidden></aside>
+</main>
+
+<footer class="dock">
+  <div class="transport">
+    <button id="play" class="tbtn play" title="Jouer / Pause (Espace)">▶</button>
+    <button id="stop" class="tbtn" title="Arrêter et remettre à zéro">■</button>
+    <button id="step" class="tbtn" title="Tick suivant (.)">⏭</button>
+    <select id="speed" title="Vitesse">
+      <option value="1">Vitesse ×1</option>
+      <option value="0.5">×0,5</option>
+      <option value="0.25">×0,25</option>
+    </select>
+    <div class="readout"><span id="tickOut">Tick 0</span><span id="timeOut">0,0 s</span></div>
+    <span id="status" class="status"></span>
+  </div>
+  <div class="palette">
+    <nav class="tabs" id="tabs" role="tablist"></nav>
+    <div class="items" id="items"></div>
+    <button id="rotate" class="rotate" title="Tourner (R)">↻ <span id="rotLabel">Est</span></button>
+  </div>
+</footer>
+
+<dialog id="dlgOpen" class="dlg">
+  <form method="dialog">
+    <h2>Mes projets</h2>
+    <p class="muted">Sauvegardés dans ce navigateur, sur cet appareil. Exporte un fichier pour les garder ailleurs.</p>
+    <ul id="projList" class="projlist"></ul>
+    <div class="dlg-actions"><button value="close">Fermer</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgHelp" class="dlg wide">
+  <form method="dialog">
+    <div id="helpBody"></div>
+    <div class="dlg-actions"><button value="close">Fermer</button></div>
+  </form>
+</dialog>
+
+<input type="file" id="fileIn" accept=".cfm,.json,application/json" hidden>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
