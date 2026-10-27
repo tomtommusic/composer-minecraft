@@ -150,7 +150,7 @@ function loadProject(data, id) {
   S.hist = []; S.fut = []; S.sel = null;
   S.sim = new Sim(S.world, onNote);
   setRunning(false);
-  syncControls(); resize(); refreshSelUI(); updateReadout(); changed(true);
+  syncControls(); resize(); scrollToWorld(); refreshSelUI(); updateReadout(); changed(true);
 }
 function newProject() {
   loadProject({ name: 'Sans titre', world: { w: 48, h: 28, cells: [] } });
@@ -235,13 +235,24 @@ function updateReadout() {
 }
 
 // ---------- Dessin ----------
+// Marge autour du terrain : on peut le déplacer au-delà de ses bords
+const pad = () => ({ x: Math.round(wrap.clientWidth * 0.6), y: Math.round(wrap.clientHeight * 0.6) });
+
 function resize() {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const W = S.world.w * S.size, H = S.world.h * S.size;
   canvas.width = W * dpr; canvas.height = H * dpr;
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  const P = pad(); $('#stagePad').style.padding = `${P.y}px ${P.x}px`;
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   draw();
+}
+
+// Place le coin du terrain (ou la case wx, wy) à (ox, oy) pixels du bord visible
+function scrollToWorld(wx = 0, wy = 0, ox = 16, oy = 16) {
+  const P = pad();
+  wrap.scrollLeft = P.x + wx * S.size - ox;
+  wrap.scrollTop = P.y + wy * S.size - oy;
 }
 
 function cellState(x, y, z, c, k) {
@@ -523,11 +534,10 @@ const touches = new Map(); // doigts posés : id -> { x, y }
 function zoomAt(size, cx, cy) {
   size = Math.max(24, Math.min(80, Math.round(size)));
   if (size === S.size) return;
-  const r = wrap.getBoundingClientRect();
-  const wx = (wrap.scrollLeft + cx - r.left) / S.size, wy = (wrap.scrollTop + cy - r.top) / S.size;
+  const r = wrap.getBoundingClientRect(), P = pad();
+  const wx = (wrap.scrollLeft + cx - r.left - P.x) / S.size, wy = (wrap.scrollTop + cy - r.top - P.y) / S.size;
   S.size = size; resize();
-  wrap.scrollLeft = wx * size - (cx - r.left);
-  wrap.scrollTop = wy * size - (cy - r.top);
+  scrollToWorld(wx, wy, cx - r.left, cy - r.top);
 }
 
 function twoFingers() {
@@ -605,6 +615,28 @@ function endPointer(e, cancelled) {
 }
 canvas.addEventListener('pointerup', e => endPointer(e, false));
 canvas.addEventListener('pointercancel', e => endPointer(e, true));
+// Dans la marge autour du terrain : glisser déplace toujours la vue
+let padPan = null;
+const padEl = $('#stagePad');
+padEl.style.touchAction = 'none';
+padEl.addEventListener('pointerdown', e => {
+  if (e.target === canvas) return;
+  padEl.setPointerCapture(e.pointerId);
+  padPan = { id: e.pointerId, sx: e.clientX, sy: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop, moved: false };
+});
+padEl.addEventListener('pointermove', e => {
+  if (!padPan || e.pointerId !== padPan.id) return;
+  wrap.scrollLeft = padPan.sl - (e.clientX - padPan.sx); wrap.scrollTop = padPan.st - (e.clientY - padPan.sy);
+});
+const endPad = e => {
+  if (!padPan || e.pointerId !== padPan.id) return;
+  const tap = Math.hypot(e.clientX - padPan.sx, e.clientY - padPan.sy) < 8;
+  padPan = null;
+  if (tap && S.sel && ['select', 'zone'].includes(S.tool) && !S.paste) { S.sel = null; refreshSelUI(); draw(); } // toucher le vide = désélectionner
+};
+padEl.addEventListener('pointerup', endPad);
+padEl.addEventListener('pointercancel', endPad);
+
 // Ctrl + molette (ou pincement du pavé tactile) : zoom
 wrap.addEventListener('wheel', e => {
   if (!e.ctrlKey) return;
@@ -949,6 +981,7 @@ $('#helpBtn').onclick = () => { $('#helpBody').innerHTML = helpHTML(); wireHelp(
 $('#undo').onclick = undo; $('#redo').onclick = redo;
 const zoomCenter = d => { const r = wrap.getBoundingClientRect(); zoomAt(S.size + d, r.left + r.width / 2, r.top + r.height / 2); };
 $('#zoomIn').onclick = () => zoomCenter(8);
+$('#recenter').onclick = () => scrollToWorld();
 $('#zoomOut').onclick = () => zoomCenter(-8);
 $('#rotate').onclick = () => { S.rot = (S.rot + 1) % 4; updateRotate(); draw(); };
 
@@ -993,7 +1026,11 @@ document.addEventListener('keydown', e => {
   else if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel) sel.remove();
 });
 
-window.addEventListener('resize', () => draw());
+// Redimensionnement de la fenêtre : garder la même vue
+window.addEventListener('resize', () => {
+  const P = pad(), wx = (wrap.scrollLeft - (parseFloat($('#stagePad').style.paddingLeft) || P.x)) / S.size, wy = (wrap.scrollTop - (parseFloat($('#stagePad').style.paddingTop) || P.y)) / S.size;
+  resize(); scrollToWorld(wx, wy, 0, 0);
+});
 
 // ---------- Démarrage ----------
 (function init() {

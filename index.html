@@ -67,12 +67,13 @@
     <button class="icon" id="redo" title="Rétablir (Ctrl+Maj+Z)" aria-label="Rétablir">↷</button>
     <button class="icon" id="zoomOut" title="Zoom arrière" aria-label="Zoom arrière">−</button>
     <button class="icon" id="zoomIn" title="Zoom avant" aria-label="Zoom avant">+</button>
+    <button class="icon" id="recenter" title="Revenir au coin du terrain" aria-label="Recentrer">⌂</button>
     <button id="helpBtn" class="ghost">Guide</button>
   </div>
 </header>
 
 <main class="workarea">
-  <div id="stageWrap" class="stage-wrap"><canvas id="stage"></canvas></div>
+  <div id="stageWrap" class="stage-wrap"><div id="stagePad" class="stage-pad"><canvas id="stage"></canvas></div></div>
   <div id="layers" class="layers" hidden>
     <button id="layerUp" title="Étage au-dessus (Page ↑)" aria-label="Étage au-dessus">▲</button>
     <div class="lv"><small>Étage</small><b id="layerVal">0</b><small id="layerCount"></small></div>
