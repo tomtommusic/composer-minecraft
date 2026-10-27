@@ -57,10 +57,14 @@ export function noteName(midi, lang = 'fr', withOctave = true) {
   return withOctave ? n + (Math.floor(midi / 12) - 1) : n;
 }
 
-export function instrumentOf(cell) {
-  return MAT[cell.below]?.instr || 'harp';
+// Instrument d'un bloc musical selon le bloc situé dessous (null = air -> harpe)
+export function instrumentFromBelow(b) {
+  if (!b) return 'harp';
+  if (b.type === 'solid') return MAT[b.mat]?.instr || 'harp';
+  if (b.type === 'note') return 'bass'; // un bloc musical est en bois
+  return 'harp';
 }
 
-export function midiOf(cell) {
-  return INSTRUMENTS[instrumentOf(cell)].base + (cell.clicks || 0);
+export function midiFor(instr, clicks) {
+  return (INSTRUMENTS[instr] || INSTRUMENTS.harp).base + (clicks || 0);
 }

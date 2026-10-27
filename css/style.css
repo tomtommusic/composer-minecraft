@@ -73,6 +73,31 @@ button { cursor: pointer; }
 .stage-wrap { flex: 1; overflow: auto; background: #0c0f12; overscroll-behavior: contain; }
 #stage { display: block; image-rendering: pixelated; }
 
+/* ---------- Étages ---------- */
+.layers[hidden], .selbar[hidden], .inspector[hidden] { display: none !important; }
+.layers {
+  position: absolute; left: 10px; bottom: 10px; z-index: 10; display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  background: var(--panel); border: 2px solid #000; border-radius: 12px; padding: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.45);
+}
+.layers button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; height: 38px; font-size: 16px; }
+.layers .lv { display: flex; flex-direction: column; align-items: center; padding: 2px 8px; font-family: var(--pixel); }
+.layers .lv b { font-size: 22px; color: var(--accent-2); }
+.layers .lv small { font-size: 10px; color: var(--muted); font-family: var(--ui); }
+
+/* ---------- Barre de sélection ---------- */
+.selbar {
+  position: absolute; top: 10px; left: 12px; right: 12px; margin: 0 auto; width: fit-content; z-index: 12; max-width: calc(100% - 24px);
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center;
+  background: var(--panel); border: 2px solid #000; border-radius: 12px; padding: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.45);
+}
+.selbar button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 14px; }
+.selbar button:disabled { opacity: .4; cursor: default; }
+.selbar .sb-label { font-size: 13px; color: var(--accent-2); font-weight: 700; padding: 0 6px; }
+.selbar .sb-ok { background: #2f9e57; border-color: #000; color: #fff; font-weight: 700; }
+.selbar .sb-del { border-color: #7a2a24; }
+.selbar .sb-check { font-size: 13px; display: flex; align-items: center; gap: 5px; padding: 0 6px; }
+.warn { background: #3a2a10; border: 1px solid var(--accent-2); color: #ffe6a0; border-radius: 8px; padding: 8px 10px; font-size: 13px; margin: 8px 0; }
+
 /* ---------- Inspecteur ---------- */
 .inspector {
   width: 310px; flex: none; overflow-y: auto; background: var(--panel); border-left: 2px solid #000; padding: 14px;
@@ -184,5 +209,12 @@ kbd { background: var(--panel-2); border: 1px solid var(--line); border-bottom-w
   .palette { flex-direction: column; gap: 6px; }
   .rotate { align-self: flex-end; padding: 6px 10px; }
   .readout { font-size: 11px; }
+  .selbar { top: 6px; left: 6px; right: 6px; padding: 4px; flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; max-width: calc(100% - 12px); }
+  .selbar > * { flex: none; }
+  .layers { padding: 4px; gap: 2px; }
+  .layers .lv b { font-size: 18px; }
+  .selbar button { padding: 6px 8px; font-size: 13px; }
+  .layers { top: auto; bottom: 10px; flex-direction: row; align-items: center; }
+  .layers button { width: 38px; }
   .status { flex-basis: 100%; margin-left: 0; }
 }

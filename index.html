@@ -38,6 +38,12 @@
     <details class="menu" id="viewMenu">
       <summary>Affichage ▾</summary>
       <div class="menu-pop">
+        <label>Mode
+          <select id="mode">
+            <option value="simple">Simple (un étage)</option>
+            <option value="advanced">Avancé (étages)</option>
+          </select>
+        </label>
         <label>Plan de travail
           <select id="theme"></select>
         </label>
@@ -67,6 +73,12 @@
 
 <main class="workarea">
   <div id="stageWrap" class="stage-wrap"><canvas id="stage"></canvas></div>
+  <div id="layers" class="layers" hidden>
+    <button id="layerUp" title="Étage au-dessus (Page ↑)" aria-label="Étage au-dessus">▲</button>
+    <div class="lv"><small>Étage</small><b id="layerVal">0</b><small id="layerCount"></small></div>
+    <button id="layerDown" title="Étage en dessous (Page ↓)" aria-label="Étage en dessous">▼</button>
+  </div>
+  <div id="selbar" class="selbar" hidden></div>
   <aside id="inspector" class="inspector" hidden></aside>
 </main>
 

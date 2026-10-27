@@ -4,6 +4,12 @@ Webapp pour composer de la musique avec des **blocs musicaux** et de la **redsto
 
 Outil non officiel, sans lien avec Mojang ni Microsoft. Les sons et les images sont créés pour l'app (imitations), ce ne sont pas les fichiers du jeu.
 
+## Version 0.2 (Bêta)
+
+- Mode **Simple** (un étage, empilement automatique : un bloc musical posé sur un matériau se met dessus) et mode **Avancé** (étages, redstone en 3D : poussière en escalier, torche au sol, bloc au-dessus d'un bloc musical qui l'empêche de jouer)
+- **Sélection** d'un bloc (outil Sélection) ou de plusieurs (outil Zone) : copier, coller, déplacer, dupliquer, tourner, retourner, supprimer, avec raccourcis clavier
+- Les projets de la v0.1 sont convertis automatiquement
+
 ## Version 0.1 (Bêta)
 
 - Palette par onglets : bloc musical, 17 matériaux (instrument selon le bloc dessous), poussière, répéteur, torche, levier, boutons, bloc de redstone

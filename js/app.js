@@ -1,5 +1,5 @@
-import { MATERIALS, MAT, INSTRUMENTS, noteName, midiOf, instrumentOf } from './data.js';
-import { World, Sim, DX, DY, isConductive } from './engine.js';
+import { MATERIALS, MAT, INSTRUMENTS, noteName, midiFor, instrumentFromBelow } from './data.js';
+import { World, Sim, DX, DY, ZMIN, ZMAX, isConductive } from './engine.js';
 import { drawBackground, drawCell, iconCanvas, THEMES } from './render.js';
 import { audio, playNote } from './sound.js';
 import { helpHTML, wireHelp } from './guide.js';
@@ -8,6 +8,7 @@ const $ = s => document.querySelector(s);
 const DIRS = ['Nord', 'Est', 'Sud', 'Ouest'];
 const ARROWS = ['↑', '→', '↓', '←'];
 const STORE = 'cfm.projects', CUR = 'cfm.current', PREFS = 'cfm.prefs';
+const clone = o => JSON.parse(JSON.stringify(o));
 
 // ---------- Stockage local (protégé : peut être indisponible) ----------
 const store = {
@@ -17,25 +18,33 @@ const store = {
 
 // ---------- État ----------
 const S = {
-  id: null, name: 'Sans titre', edition: 'java', theme: 'tableau',
+  id: null, name: 'Sans titre', edition: 'java', theme: 'tableau', mode: 'simple',
   world: new World(48, 28), sim: null,
-  tool: 'select', rot: 1, lastBelow: 'dirt',
-  sel: null, hover: null, size: 44,
+  layer: 0, tool: 'select', rot: 1, lastBelow: null,
+  sel: null,            // rectangle sélectionné { x0, y0, x1, y1 } sur l'étage affiché
+  allLayers: false,     // mode Avancé : la sélection inclut tous les étages
+  clip: null,           // presse-papiers { w, h, cells: [[dx, dy, dz, cell]] }
+  paste: null,          // collage en cours { buf, move }
+  pasteAt: null,
+  hover: null, size: 44,
   running: false, speed: 1, audioT: 0,
   hist: [], fut: [], tab: 'redstone',
   prefs: Object.assign({ lang: 'fr', showNames: true, showPower: false }, store.get(PREFS, {})),
 };
 
 const canvas = $('#stage'), g = canvas.getContext('2d'), wrap = $('#stageWrap');
+const L = () => (S.mode === 'advanced' ? S.layer : 0);
 
 // ---------- Palette ----------
+const outline = (c, s) => { c.strokeStyle = '#000'; c.lineWidth = 2; c.strokeRect(s * .1, s * .1, s * .8, s * .8); };
 const PALETTE = {
   outils: { label: 'Outils', items: [
     { id: 'select', name: 'Sélection / jouer', draw: (c, s) => { c.fillStyle = '#ffd34d'; c.beginPath(); c.moveTo(s * .3, s * .15); c.lineTo(s * .3, s * .8); c.lineTo(s * .45, s * .65); c.lineTo(s * .58, s * .88); c.lineTo(s * .68, s * .83); c.lineTo(s * .55, s * .6); c.lineTo(s * .75, s * .6); c.closePath(); c.fill(); c.strokeStyle = '#000'; c.lineWidth = 2; c.stroke(); } },
+    { id: 'zone', name: 'Zone (multiple)', draw: (c, s) => { c.strokeStyle = '#000'; c.lineWidth = 5; c.strokeRect(s * .15, s * .2, s * .7, s * .6); c.strokeStyle = '#ffd34d'; c.lineWidth = 2.5; c.setLineDash([s * .1, s * .07]); c.strokeRect(s * .15, s * .2, s * .7, s * .6); c.setLineDash([]); c.fillStyle = '#ffd34d'; c.fillRect(s * .7, s * .65, s * .18, s * .18); } },
     { id: 'erase', name: 'Gomme', draw: (c, s) => { c.save(); c.translate(s / 2, s / 2); c.rotate(-0.6); c.fillStyle = '#ff8fa0'; c.fillRect(-s * .3, -s * .14, s * .38, s * .28); c.fillStyle = '#e7e7e7'; c.fillRect(s * .08, -s * .14, s * .22, s * .28); c.strokeStyle = '#000'; c.lineWidth = 2; c.strokeRect(-s * .3, -s * .14, s * .6, s * .28); c.restore(); } },
   ] },
   musique: { label: 'Musique', items: [
-    { id: 'note', name: 'Bloc musical', cell: { type: 'note', below: 'dirt', clicks: 0 } },
+    { id: 'note', name: 'Bloc musical', cell: { type: 'note', clicks: 0 } },
   ] },
   materiaux: { label: 'Matériaux', items: MATERIALS.map(m => ({ id: 'mat:' + m.id, name: m.name, mat: m.id, sub: INSTRUMENTS[m.instr].name })) },
   redstone: { label: 'Redstone', items: [
@@ -48,10 +57,10 @@ const PALETTE = {
     { id: 'rblock', name: 'Bloc de redstone', cell: { type: 'rblock' } },
   ] },
   bientot: { label: 'Bientôt', items: [
-    { id: 'soon:piston', name: 'Piston', soon: true, draw: (c, s) => { c.fillStyle = '#9a9a9a'; c.fillRect(s * .1, s * .3, s * .8, s * .6); c.fillStyle = '#b08850'; c.fillRect(s * .1, s * .1, s * .8, s * .22); c.strokeStyle = '#000'; c.lineWidth = 2; c.strokeRect(s * .1, s * .1, s * .8, s * .8); } },
-    { id: 'soon:sticky', name: 'Piston collant', soon: true, draw: (c, s) => { c.fillStyle = '#9a9a9a'; c.fillRect(s * .1, s * .3, s * .8, s * .6); c.fillStyle = '#7cc46a'; c.fillRect(s * .1, s * .1, s * .8, s * .22); c.strokeStyle = '#000'; c.lineWidth = 2; c.strokeRect(s * .1, s * .1, s * .8, s * .8); } },
-    { id: 'soon:slime', name: 'Bloc de slime', soon: true, draw: (c, s) => { c.fillStyle = '#7cc46a'; c.fillRect(s * .1, s * .1, s * .8, s * .8); c.fillStyle = '#5a9e4b'; c.fillRect(s * .3, s * .3, s * .4, s * .4); c.strokeStyle = '#000'; c.lineWidth = 2; c.strokeRect(s * .1, s * .1, s * .8, s * .8); } },
-    { id: 'soon:cmd', name: 'Bloc de commande', soon: true, draw: (c, s) => { c.fillStyle = '#c47a3c'; c.fillRect(s * .1, s * .1, s * .8, s * .8); c.fillStyle = '#e8e8e8'; c.fillRect(s * .3, s * .3, s * .4, s * .4); c.fillStyle = '#333'; c.font = `700 ${s * .26}px monospace`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('/', s / 2, s / 2); c.strokeStyle = '#000'; c.lineWidth = 2; c.strokeRect(s * .1, s * .1, s * .8, s * .8); } },
+    { id: 'soon:piston', name: 'Piston', soon: true, draw: (c, s) => { c.fillStyle = '#9a9a9a'; c.fillRect(s * .1, s * .3, s * .8, s * .6); c.fillStyle = '#b08850'; c.fillRect(s * .1, s * .1, s * .8, s * .22); outline(c, s); } },
+    { id: 'soon:sticky', name: 'Piston collant', soon: true, draw: (c, s) => { c.fillStyle = '#9a9a9a'; c.fillRect(s * .1, s * .3, s * .8, s * .6); c.fillStyle = '#7cc46a'; c.fillRect(s * .1, s * .1, s * .8, s * .22); outline(c, s); } },
+    { id: 'soon:slime', name: 'Bloc de slime', soon: true, draw: (c, s) => { c.fillStyle = '#7cc46a'; c.fillRect(s * .1, s * .1, s * .8, s * .8); c.fillStyle = '#5a9e4b'; c.fillRect(s * .3, s * .3, s * .4, s * .4); outline(c, s); } },
+    { id: 'soon:cmd', name: 'Bloc de commande', soon: true, draw: (c, s) => { c.fillStyle = '#c47a3c'; c.fillRect(s * .1, s * .1, s * .8, s * .8); c.fillStyle = '#e8e8e8'; c.fillRect(s * .3, s * .3, s * .4, s * .4); c.fillStyle = '#333'; c.font = `700 ${s * .26}px monospace`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('/', s / 2, s / 2); outline(c, s); } },
   ] },
 };
 
@@ -81,18 +90,24 @@ function buildPalette() {
   updateRotate();
 }
 
+function setTouch() {
+  const free = S.tool === 'select' || !!S.paste;
+  wrap.style.touchAction = canvas.style.touchAction = free ? 'auto' : 'none';
+}
+
 function setTool(id) {
+  if (S.paste) endPaste(true);
   S.tool = id;
-  wrap.style.touchAction = id === 'select' ? 'auto' : 'none';
-  canvas.style.touchAction = wrap.style.touchAction;
-  buildPalette();
+  if (!['select', 'zone'].includes(id) && S.sel && !isSingle()) S.sel = null;
+  setTouch(); buildPalette(); refreshSelUI(); draw();
   const hints = {
     select: 'Touche un bloc pour le régler. Touche un levier ou un bouton pour l’actionner.',
+    zone: 'Glisse pour encadrer plusieurs blocs, puis copie, déplace, tourne…',
     erase: 'Touche ou glisse pour effacer.',
-    note: 'Pose un bloc musical, puis choisis sa note dans le panneau de réglage.',
+    note: 'Pose un bloc musical (aussi sur un matériau : il se place dessus), puis choisis sa note.',
     dust: 'Glisse pour tracer une ligne de poussière.',
     repeater: 'La flèche indique la sortie. Retouche un répéteur pour le tourner.',
-    torch: 'Pose la torche à côté d’un bloc plein : elle s’y accroche.',
+    torch: 'À côté d’un bloc plein, la torche s’y accroche; sinon elle est posée au sol.',
   };
   if (id.startsWith('mat:')) status('Pose ce matériau sur un bloc musical pour changer son instrument, ou seul comme bloc plein.');
   else status(hints[id] || hints[id.split(':')[0]] || '');
@@ -107,14 +122,14 @@ function updateRotate() {
 // ---------- Historique ----------
 function snapshot() { return JSON.stringify(S.world.toJSON()); }
 function pushHist() { S.hist.push(snapshot()); if (S.hist.length > 120) S.hist.shift(); S.fut = []; }
-function restore(json) { const w = World.fromJSON(JSON.parse(json)); S.world.cells = w.cells; S.sel = null; closeInspector(); changed(false); }
-function undo() { if (!S.hist.length) return; S.fut.push(snapshot()); restore(S.hist.pop()); }
-function redo() { if (!S.fut.length) return; S.hist.push(snapshot()); restore(S.fut.pop()); }
+function restore(json) { const w = World.fromJSON(JSON.parse(json)); S.world.cells = w.cells; refreshSelUI(); changed(false); }
+function undo() { if (S.paste) { endPaste(); return; } if (!S.hist.length) return; S.fut.push(snapshot()); restore(S.hist.pop()); autosave(); }
+function redo() { if (!S.fut.length) return; S.hist.push(snapshot()); restore(S.fut.pop()); autosave(); }
 
 // ---------- Projets ----------
 function newId() { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 function projectData() {
-  return { app: 'composer-for-minecraft', version: 1, name: S.name, edition: S.edition, theme: S.theme, world: S.world.toJSON() };
+  return { app: 'composer-for-minecraft', version: 2, name: S.name, edition: S.edition, theme: S.theme, mode: S.mode, world: S.world.toJSON() };
 }
 let saveTimer = null;
 function autosave() {
@@ -126,15 +141,18 @@ function autosave() {
   }, 400);
 }
 function loadProject(data, id) {
+  if (S.paste) endPaste(true);
   S.id = id || newId();
   S.name = data.name || 'Sans titre';
   S.edition = data.edition || 'java';
   S.theme = THEMES[data.theme] ? data.theme : 'tableau';
+  S.mode = data.mode === 'advanced' ? 'advanced' : 'simple';
+  S.layer = 0;
   S.world = World.fromJSON(data.world || {});
-  S.hist = []; S.fut = []; S.sel = null; closeInspector();
+  S.hist = []; S.fut = []; S.sel = null;
   S.sim = new Sim(S.world, onNote);
   setRunning(false);
-  syncControls(); resize(); changed(true);
+  syncControls(); resize(); refreshSelUI(); updateReadout(); changed(true);
 }
 function newProject() {
   loadProject({ name: 'Sans titre', world: { w: 48, h: 28, cells: [] } });
@@ -145,34 +163,43 @@ function syncControls() {
   $('#projName').value = S.name;
   $('#edition').value = S.edition;
   $('#theme').value = S.theme;
+  $('#mode').value = S.mode;
   $('#lang').value = S.prefs.lang;
   $('#showNames').checked = S.prefs.showNames;
   $('#showPower').checked = S.prefs.showPower;
+  updateLayerUI();
 }
 
-function changed(save = true) { if (save) autosave(); draw(); }
+function changed(save = true) { if (save) autosave(); if (S.mode === 'advanced') updateLayerUI(); draw(); }
 
 // ---------- Démo ----------
 function demoProject() {
   const w = new World(48, 28);
   const y = 6; let x = 2;
-  // Do Do Do Ré Mi(blanche) Ré(blanche) Do Mi Ré Ré Do(ronde) — chaque noire = 4 ticks (noire = 150)
+  // Do Do Do Ré Mi(blanche) Ré(blanche) Do Mi Ré Ré Do — chaque noire = 4 ticks (noire = 150)
   const melody = [[6, 4], [6, 4], [6, 4], [8, 4], [10, 8], [8, 8], [6, 4], [10, 4], [8, 4], [8, 4], [6, 0]];
-  w.set(x++, y, { type: 'button', kind: 'stone' });
-  w.set(x++, y, { type: 'repeater', dir: 1, delay: 1 });
+  w.set(x++, y, 0, { type: 'button', kind: 'stone' });
+  w.set(x++, y, 0, { type: 'repeater', dir: 1, delay: 1 });
   melody.forEach(([clicks, dur]) => {
-    w.set(x++, y, { type: 'note', clicks, below: 'dirt' });
-    for (let left = dur; left > 0; left -= 4) w.set(x++, y, { type: 'repeater', dir: 1, delay: Math.min(4, left) });
+    w.set(x++, y, 0, { type: 'note', clicks });
+    for (let left = dur; left > 0; left -= 4) w.set(x++, y, 0, { type: 'repeater', dir: 1, delay: Math.min(4, left) });
   });
-  // Petite basse en parallèle : planches de bois sous les blocs musicaux
-  return { name: 'Au clair de la lune', edition: 'java', theme: 'gazon', world: w.toJSON() };
+  return { name: 'Au clair de la lune', edition: 'java', theme: 'gazon', mode: 'simple', world: w.toJSON() };
 }
 
 // ---------- Simulation & son ----------
-function onNote(x, y, c) {
+function instrAt(x, y, z) { return instrumentFromBelow(S.world.get(x, y, z - 1)); }
+
+function onNote(x, y, z, c, instr) {
   const lead = Math.max(0, (S.audioT - audio().currentTime) * 1000);
-  S.sim.flash.set(S.world.k(x, y), performance.now() + lead);
-  playNote(instrumentOf(c), midiOf(c), S.audioT || 0);
+  S.sim.flash.set(S.world.k(x, y, z), performance.now() + lead);
+  playNote(instr, midiFor(instr, c.clicks), S.audioT || 0);
+}
+
+function previewNote(x, y, z) {
+  const c = S.world.get(x, y, z); if (!c || c.type !== 'note') return;
+  const instr = instrAt(x, y, z);
+  playNote(instr, midiFor(instr, c.clicks));
 }
 
 function setRunning(on) {
@@ -180,7 +207,7 @@ function setRunning(on) {
   const b = $('#play');
   b.textContent = on ? '❚❚' : '▶';
   b.classList.toggle('paused', on);
-  if (on) { S.audioT = audio().currentTime + 0.06; }
+  if (on) S.audioT = audio().currentTime + 0.06;
 }
 
 function stepOnce() {
@@ -191,7 +218,7 @@ function stepOnce() {
 function loop() {
   if (S.running) {
     const ctx = audio();
-    if (S.audioT < ctx.currentTime - 0.25) S.audioT = ctx.currentTime + 0.02; // rattrapage après une pause d'onglet
+    if (S.audioT < ctx.currentTime - 0.25) S.audioT = ctx.currentTime + 0.02;
     let n = 0;
     while (S.audioT < ctx.currentTime + 0.12 && n++ < 20) {
       S.sim.step();
@@ -219,16 +246,18 @@ function resize() {
   draw();
 }
 
-function cellState(x, y, c, k) {
-  const sim = S.sim, now = performance.now();
+function cellState(x, y, z, c, k) {
+  const sim = S.sim, now = performance.now(), W = S.world;
   const st = { lang: S.prefs.lang, showNames: S.prefs.showNames, showPower: S.prefs.showPower };
   switch (c.type) {
-    case 'dust': st.level = sim.dust.get(k) || 0; st.pts = sim.dustPts.get(k)?.pts; break;
+    case 'dust': { st.level = sim.dust.get(k) || 0; const i = sim.dustInfo.get(k); st.pts = i?.pts; st.vert = i?.vert; break; }
     case 'repeater': st.out = !!sim.rep.get(k); st.input = sim.repIn.has(k); break;
     case 'torch': st.lit = sim.isTorchLit(k); break;
     case 'button': st.on = sim.isButtonOn(k); break;
     case 'solid': st.powered = sim.powered.has(k); break;
     case 'note': {
+      st.below = W.get(x, y, z - 1);
+      st.blocked = !!W.get(x, y, z + 1);
       const t = sim.flash.get(k);
       st.flash = t != null && now >= t ? Math.max(0, 1 - (now - t) / 350) : 0;
       break;
@@ -238,29 +267,50 @@ function cellState(x, y, c, k) {
 }
 
 function draw() {
-  const s = S.size, W = S.world;
-  // Fond
+  const s = S.size, W = S.world, z0 = L();
   for (let y = 0; y < W.h; y++) for (let x = 0; x < W.w; x++) drawBackground(g, S.theme, x, y, s);
-  // Blocs
-  for (const [x, y, c, k] of W.each()) drawCell(g, c, x, y, s, cellState(x, y, c, k));
-  // Aperçu du bloc sous le pointeur
+  // Mode Avancé : l'étage du dessous, en transparence
+  if (S.mode === 'advanced') {
+    g.save(); g.globalAlpha = 0.3;
+    for (const [x, y, z, c, k] of W.each()) if (z === z0 - 1 && !W.get(x, y, z0)) drawCell(g, c, x, y, s, { ...cellState(x, y, z, c, k), showNames: false, showPower: false });
+    g.restore();
+  }
+  for (const [x, y, z, c, k] of W.each()) if (z === z0) drawCell(g, c, x, y, s, cellState(x, y, z, c, k));
+
+  // Aperçu sous le pointeur
   const h = S.hover;
-  if (h && !['select', 'erase'].includes(S.tool) && !W.get(h.x, h.y)) {
+  if (S.paste) drawPasteGhost();
+  else if (h && !['select', 'erase', 'zone'].includes(S.tool) && !W.get(h.x, h.y, z0)) {
     const ghost = ghostCell(h.x, h.y);
     if (ghost) { g.save(); g.globalAlpha = 0.45; drawCell(g, ghost, h.x, h.y, s, { lit: true, pts: [1, 3], showNames: false }); g.restore(); }
   }
-  if (h) { g.strokeStyle = S.tool === 'erase' ? '#ff6b5e' : 'rgba(255,255,255,.55)'; g.lineWidth = 2; g.strokeRect(h.x * s + 1, h.y * s + 1, s - 2, s - 2); }
-  // Sélection : contour double (noir + or) pour être visible sur tous les fonds
+  if (h && !S.paste) { g.strokeStyle = S.tool === 'erase' ? '#ff6b5e' : 'rgba(255,255,255,.55)'; g.lineWidth = 2; g.strokeRect(h.x * s + 1, h.y * s + 1, s - 2, s - 2); }
+
+  // Sélection : contour double (noir + or), pointillé si plusieurs cases
   if (S.sel) {
-    const { x, y } = S.sel;
-    g.lineWidth = 5; g.strokeStyle = '#000'; g.strokeRect(x * s + 1.5, y * s + 1.5, s - 3, s - 3);
-    g.lineWidth = 2.5; g.strokeStyle = '#ffd34d'; g.strokeRect(x * s + 1.5, y * s + 1.5, s - 3, s - 3);
+    const { x0, y0, x1, y1 } = S.sel;
+    const rx = x0 * s + 1.5, ry = y0 * s + 1.5, rw = (x1 - x0 + 1) * s - 3, rh = (y1 - y0 + 1) * s - 3;
+    g.lineWidth = 5; g.strokeStyle = '#000'; g.strokeRect(rx, ry, rw, rh);
+    g.lineWidth = 2.5; g.strokeStyle = '#ffd34d';
+    if (!isSingle()) g.setLineDash([8, 5]);
+    g.strokeRect(rx, ry, rw, rh); g.setLineDash([]);
+    if (!isSingle()) { g.fillStyle = 'rgba(255,211,77,.08)'; g.fillRect(rx, ry, rw, rh); }
   }
+}
+
+function drawPasteGhost() {
+  const a = S.pasteAt || S.hover; if (!a) return;
+  const s = S.size, buf = S.paste.buf;
+  g.save(); g.globalAlpha = 0.55;
+  for (const [dx, dy, dz, c] of buf.cells) if (dz === 0) drawCell(g, c, a.x + dx, a.y + dy, s, { lit: true, showNames: S.prefs.showNames, lang: S.prefs.lang });
+  g.restore();
+  g.lineWidth = 2.5; g.strokeStyle = '#7fe0a0'; g.setLineDash([6, 4]);
+  g.strokeRect(a.x * s + 1, a.y * s + 1, buf.w * s - 2, buf.h * s - 2); g.setLineDash([]);
 }
 
 function ghostCell(x, y) {
   const t = S.tool;
-  if (t === 'note') return { type: 'note', below: S.lastBelow, clicks: 0 };
+  if (t === 'note') return { type: 'note', clicks: 0 };
   if (t.startsWith('mat:')) return { type: 'solid', mat: t.slice(4) };
   if (t === 'dust') return { type: 'dust' };
   if (t === 'repeater') return { type: 'repeater', dir: S.rot, delay: 1 };
@@ -271,11 +321,194 @@ function ghostCell(x, y) {
   return null;
 }
 
-// La torche s'accroche au bloc plein voisin (en priorité dans le sens choisi)
+// Torche : s'accroche à un bloc plein voisin (en priorité dans le sens choisi), sinon posée au sol
 function torchAttach(x, y) {
   const back = (S.rot + 2) % 4;
-  for (const d of [back, S.rot, (S.rot + 1) % 4, (S.rot + 3) % 4]) if (isConductive(S.world.get(x + DX[d], y + DY[d]))) return d;
-  return back;
+  for (const d of [back, S.rot, (S.rot + 1) % 4, (S.rot + 3) % 4]) if (isConductive(S.world.get(x + DX[d], y + DY[d], L()))) return d;
+  return 5;
+}
+
+// ---------- Sélection ----------
+function isSingle() { return S.sel && S.sel.x0 === S.sel.x1 && S.sel.y0 === S.sel.y1; }
+function selLayers() {
+  if (S.mode === 'simple') return [...Array(ZMAX - ZMIN + 1).keys()].map(i => i + ZMIN);
+  return S.allLayers ? [...Array(ZMAX - ZMIN + 1).keys()].map(i => i + ZMIN) : [S.layer];
+}
+function normRect(a, b) { return { x0: Math.min(a.x, b.x), y0: Math.min(a.y, b.y), x1: Math.max(a.x, b.x), y1: Math.max(a.y, b.y) }; }
+
+function gather(rect, remove = false) {
+  const cells = [], base = L();
+  for (const z of selLayers()) for (let y = rect.y0; y <= rect.y1; y++) for (let x = rect.x0; x <= rect.x1; x++) {
+    const c = S.world.get(x, y, z);
+    if (c) { cells.push([x - rect.x0, y - rect.y0, z - base, clone(c)]); if (remove) S.world.del(x, y, z); }
+  }
+  return { w: rect.x1 - rect.x0 + 1, h: rect.y1 - rect.y0 + 1, cells };
+}
+
+function place(buf, ax, ay) {
+  const base = L();
+  for (const [dx, dy, dz, c] of buf.cells) S.world.set(ax + dx, ay + dy, base + dz, clone(c));
+}
+
+// Tourner (90° horaire) ou retourner (miroir gauche-droite) un tampon
+function transform(buf, op) {
+  const cells = buf.cells.map(([dx, dy, dz, c0]) => {
+    const c = clone(c0);
+    let nx = dx, ny = dy;
+    if (op === 'rot') {
+      nx = buf.h - 1 - dy; ny = dx;
+      if (c.dir != null && c.dir < 4) c.dir = (c.dir + 1) % 4;
+    } else {
+      nx = buf.w - 1 - dx;
+      if (c.dir === 1) c.dir = 3; else if (c.dir === 3) c.dir = 1;
+    }
+    return [nx, ny, dz, c];
+  });
+  return op === 'rot' ? { w: buf.h, h: buf.w, cells } : { w: buf.w, h: buf.h, cells };
+}
+
+function countSel() { return S.sel ? gather(S.sel).cells.filter(([, , dz]) => dz === 0).length : 0; }
+
+const sel = {
+  copy() {
+    if (!S.sel) return;
+    S.clip = gather(S.sel);
+    status(`${S.clip.cells.length} bloc${S.clip.cells.length > 1 ? 's' : ''} copié${S.clip.cells.length > 1 ? 's' : ''}.`);
+    refreshSelUI();
+  },
+  paste() {
+    if (!S.clip) return;
+    startPaste(clone(S.clip), false);
+  },
+  move() {
+    if (!S.sel) return;
+    pushHist();
+    const buf = gather(S.sel, true);
+    S.clip = clone(buf);
+    const at = { x: S.sel.x0, y: S.sel.y0 };
+    startPaste(buf, true, at);
+    changed(false);
+  },
+  duplicate() {
+    if (!S.sel) return;
+    pushHist();
+    const buf = gather(S.sel), { x0, y0, x1, y1 } = S.sel, W = S.world;
+    let ax = x1 + 1, ay = y0;
+    if (ax + buf.w > W.w) { ax = x0; ay = y1 + 1; }
+    if (ay + buf.h > W.h) { ax = Math.min(x0 + 1, W.w - buf.w); ay = Math.min(y0 + 1, W.h - buf.h); }
+    place(buf, ax, ay);
+    S.sel = { x0: ax, y0: ay, x1: Math.min(W.w - 1, ax + buf.w - 1), y1: Math.min(W.h - 1, ay + buf.h - 1) };
+    refreshSelUI(); changed(); status('Dupliqué. Tu peux déplacer la copie.');
+  },
+  turn(op) {
+    if (S.paste) { S.paste.buf = transform(S.paste.buf, op); draw(); return; }
+    if (!S.sel) return;
+    pushHist();
+    const buf = transform(gather(S.sel, true), op), W = S.world;
+    const ax = Math.min(S.sel.x0, W.w - buf.w), ay = Math.min(S.sel.y0, W.h - buf.h);
+    place(buf, Math.max(0, ax), Math.max(0, ay));
+    S.sel = { x0: Math.max(0, ax), y0: Math.max(0, ay), x1: Math.max(0, ax) + buf.w - 1, y1: Math.max(0, ay) + buf.h - 1 };
+    refreshSelUI(); changed();
+  },
+  remove() {
+    if (!S.sel) return;
+    pushHist(); gather(S.sel, true);
+    S.sel = null; refreshSelUI(); changed();
+  },
+  clear() { S.sel = null; refreshSelUI(); draw(); },
+};
+
+function startPaste(buf, move, at) {
+  S.paste = { buf, move };
+  S.pasteAt = at || (S.sel ? { x: Math.min(S.sel.x1 + 1, S.world.w - 1), y: S.sel.y0 } : { x: 0, y: 0 });
+  S.sel = null;
+  setTouch(); refreshSelUI(); draw();
+  status(move ? 'Touche l’endroit où déplacer (coin en haut à gauche).' : 'Touche l’endroit où coller. Tu peux coller plusieurs fois.');
+}
+
+function endPaste(cancel = false) {
+  const p = S.paste; if (!p) return;
+  S.paste = null; S.pasteAt = null;
+  if (cancel && p.move) { // annuler un déplacement = remettre les blocs
+    if (S.hist.length) restore(S.hist.pop());
+    status('Déplacement annulé.');
+  } else status('');
+  setTouch(); refreshSelUI(); draw();
+}
+
+function pasteAt(p) {
+  const buf = S.paste.buf;
+  const ax = Math.min(p.x, S.world.w - buf.w), ay = Math.min(p.y, S.world.h - buf.h);
+  if (!S.paste.move) pushHist();
+  place(buf, Math.max(0, ax), Math.max(0, ay));
+  const rect = { x0: Math.max(0, ax), y0: Math.max(0, ay), x1: Math.max(0, ax) + buf.w - 1, y1: Math.max(0, ay) + buf.h - 1 };
+  if (S.paste.move) { S.paste = null; S.pasteAt = null; S.sel = rect; setTouch(); status('Déplacé.'); }
+  else { S.pasteAt = { x: rect.x0, y: rect.y0 }; status('Collé. Touche ailleurs pour coller encore, ou Terminer.'); }
+  refreshSelUI(); changed();
+}
+
+// Barre d'actions de la sélection
+const selbar = $('#selbar');
+function refreshSelUI() {
+  if (S.sel && (S.sel.x1 >= S.world.w || S.sel.y1 >= S.world.h)) S.sel = null;
+  if (S.paste) {
+    selbar.hidden = false;
+    selbar.innerHTML = `<span class="sb-label">${S.paste.move ? 'Déplacer' : 'Coller'} · ${S.paste.buf.cells.length} bloc${S.paste.buf.cells.length > 1 ? 's' : ''}</span>
+      <button data-s="rot" title="Tourner (R)">↻</button><button data-s="flip" title="Retourner (F)">⇋</button>
+      <button data-s="done" class="sb-ok">${S.paste.move ? 'Annuler' : 'Terminer'}</button>`;
+  } else if (S.sel && ['select', 'zone'].includes(S.tool)) {
+    const n = countSel();
+    const single = isSingle();
+    if (single && n === 0) { selbar.hidden = true; } else {
+      selbar.hidden = false;
+      selbar.innerHTML = `<span class="sb-label">${single ? '1 bloc' : `${n} bloc${n > 1 ? 's' : ''} · ${S.sel.x1 - S.sel.x0 + 1}×${S.sel.y1 - S.sel.y0 + 1}`}</span>
+        <button data-s="copy" title="Copier (Ctrl+C)">Copier</button>
+        <button data-s="paste" title="Coller (Ctrl+V)" ${S.clip ? '' : 'disabled'}>Coller</button>
+        <button data-s="move" title="Déplacer (Ctrl+X)">Déplacer</button>
+        <button data-s="dup" title="Dupliquer (Ctrl+D)">Dupliquer</button>
+        <button data-s="rot" title="Tourner (R)">↻</button>
+        <button data-s="flip" title="Retourner (F)">⇋</button>
+        <button data-s="del" class="sb-del" title="Supprimer (Suppr)">🗑</button>
+        ${S.mode === 'advanced' ? `<label class="sb-check"><input type="checkbox" data-s="all" ${S.allLayers ? 'checked' : ''}> Tous les étages</label>` : ''}
+        <button data-s="x" title="Désélectionner (Échap)">✕</button>`;
+    }
+  } else if (S.clip && ['select', 'zone'].includes(S.tool)) {
+    selbar.hidden = false;
+    selbar.innerHTML = `<span class="sb-label">Presse-papiers : ${S.clip.cells.length} bloc${S.clip.cells.length > 1 ? 's' : ''}</span><button data-s="paste">Coller</button>`;
+  } else selbar.hidden = true;
+  if (S.sel && isSingle() && S.world.get(S.sel.x0, S.sel.y0, L()) && !S.paste) openInspector(); else closeInspector();
+}
+selbar.addEventListener('click', e => {
+  const b = e.target.closest('button[data-s]'); if (!b) return;
+  ({ copy: sel.copy, paste: sel.paste, move: sel.move, dup: sel.duplicate, rot: () => sel.turn('rot'), flip: () => sel.turn('flip'),
+     del: sel.remove, x: sel.clear, done: () => endPaste(true) })[b.dataset.s]?.();
+});
+selbar.addEventListener('change', e => { if (e.target.dataset.s === 'all') { S.allLayers = e.target.checked; refreshSelUI(); } });
+
+// ---------- Étages ----------
+function updateLayerUI() {
+  const box = $('#layers');
+  box.hidden = S.mode !== 'advanced';
+  $('#layerVal').textContent = S.layer > 0 ? '+' + S.layer : String(S.layer);
+  const n = [...S.world.each()].filter(([, , z]) => z === S.layer).length;
+  $('#layerCount').textContent = n + ' bloc' + (n > 1 ? 's' : '');
+}
+function setLayer(z) {
+  S.layer = Math.max(ZMIN, Math.min(ZMAX, z));
+  if (!isSingle()) S.sel = null;
+  updateLayerUI(); refreshSelUI(); draw();
+}
+$('#layerUp').onclick = () => setLayer(S.layer + 1);
+$('#layerDown').onclick = () => setLayer(S.layer - 1);
+
+function setMode(m) {
+  S.mode = m; S.layer = 0; S.sel = null;
+  updateLayerUI(); refreshSelUI(); changed();
+  if (m === 'advanced') status('Mode Avancé : change d’étage avec ▲ ▼. L’étage du dessous apparaît en transparence.');
+  else {
+    const other = [...S.world.each()].some(([x, y, z]) => z !== 0 && !(z === -1 && S.world.get(x, y, 0)?.type === 'note'));
+    status(other ? 'Mode Simple : des blocs restent sur d’autres étages; ils fonctionnent toujours mais sont cachés.' : 'Mode Simple : un seul étage, empilement automatique.');
+  }
 }
 
 // ---------- Interaction avec le plan ----------
@@ -289,17 +522,23 @@ let drag = null;
 canvas.addEventListener('pointerdown', e => {
   audio();
   const p = cellAt(e); if (!p) return;
-  if (e.button === 2) { e.preventDefault(); applyTool('erase', p, false); return; }
-  if (S.tool === 'select') { drag = { start: p, moved: false, sx: e.clientX, sy: e.clientY }; return; }
+  if (e.button === 2) { e.preventDefault(); if (!S.paste) { pushHist(); applyTool('erase', p, false); changed(); } return; }
+  if (S.paste || S.tool === 'select') { drag = { tap: true, moved: false, sx: e.clientX, sy: e.clientY }; return; }
   canvas.setPointerCapture(e.pointerId);
+  if (S.tool === 'zone') { drag = { zone: true, start: p }; S.sel = normRect(p, p); refreshSelUI(); draw(); return; }
   pushHist();
   drag = { last: p, painting: true };
   applyTool(S.tool, p, false);
 });
 canvas.addEventListener('pointermove', e => {
   const p = cellAt(e);
-  if (e.pointerType === 'mouse') { const old = S.hover; S.hover = p; if (!old || !p || old.x !== p.x || old.y !== p.y) draw(); }
+  if (e.pointerType === 'mouse') {
+    const old = S.hover; S.hover = p;
+    if (S.paste && p) S.pasteAt = p;
+    if (!old || !p || old.x !== p.x || old.y !== p.y) draw();
+  }
   if (!drag || !p) return;
+  if (drag.zone) { S.sel = normRect(drag.start, p); draw(); return; }
   if (drag.painting) {
     if (p.x === drag.last.x && p.y === drag.last.y) return;
     if (['dust', 'erase'].includes(S.tool) || S.tool.startsWith('mat:')) applyTool(S.tool, p, true);
@@ -307,76 +546,102 @@ canvas.addEventListener('pointermove', e => {
   } else if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 8) drag.moved = true;
 });
 canvas.addEventListener('pointerup', e => {
-  if (drag && !drag.painting && !drag.moved) { const p = cellAt(e); if (p) selectAt(p); }
-  if (drag && drag.painting) changed();
+  const p = cellAt(e);
+  if (drag?.tap && !drag.moved && p) { if (S.paste) pasteAt(p); else selectAt(p); }
+  if (drag?.zone) { refreshSelUI(); draw(); }
+  if (drag?.painting) changed();
   drag = null;
 });
-canvas.addEventListener('pointercancel', () => { if (drag && drag.painting) changed(); drag = null; });
+canvas.addEventListener('pointercancel', () => { if (drag?.painting) changed(); if (drag?.zone) refreshSelUI(); drag = null; });
 canvas.addEventListener('pointerleave', () => { if (S.hover) { S.hover = null; draw(); } });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 function selectAt(p) {
-  const c = S.world.get(p.x, p.y);
+  const z = L(), c = S.world.get(p.x, p.y, z);
   if (c && c.type === 'lever') { pushHist(); c.on = !c.on; if (!S.running) setRunning(true); changed(); }
-  else if (c && c.type === 'button') { S.sim.pressButton(p.x, p.y); if (!S.running) setRunning(true); }
-  else if (c && c.type === 'note') { previewNote(c); }
-  S.sel = c ? p : null;
-  c ? openInspector() : closeInspector();
-  draw();
+  else if (c && c.type === 'button') { S.sim.pressButton(p.x, p.y, z); if (!S.running) setRunning(true); }
+  else if (c && c.type === 'note') previewNote(p.x, p.y, z);
+  S.sel = c ? { x0: p.x, y0: p.y, x1: p.x, y1: p.y } : null;
+  refreshSelUI(); draw();
 }
 
+function selectOne(p) { S.sel = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }; refreshSelUI(); }
+
 function applyTool(tool, p, dragging) {
-  const W = S.world, c = W.get(p.x, p.y);
-  if (tool === 'erase') { if (c) { W.del(p.x, p.y); if (S.sel && S.sel.x === p.x && S.sel.y === p.y) { S.sel = null; closeInspector(); } } draw(); return; }
+  const W = S.world, z = L(), c = W.get(p.x, p.y, z);
+  if (tool === 'erase') {
+    if (c) {
+      W.del(p.x, p.y, z);
+      // Mode Simple : effacer un bloc musical efface aussi son bloc dessous
+      if (S.mode === 'simple' && c.type === 'note') W.del(p.x, p.y, z - 1);
+      if (S.sel && isSingle() && S.sel.x0 === p.x && S.sel.y0 === p.y) { S.sel = null; refreshSelUI(); }
+    }
+    draw(); return;
+  }
   if (tool.startsWith('mat:')) {
     const id = tool.slice(4);
-    if (c && c.type === 'note') { c.below = id; S.lastBelow = id; previewNote(c); S.sel = p; openInspector(); }
+    if (c && c.type === 'note') { W.set(p.x, p.y, z - 1, { type: 'solid', mat: id }); S.lastBelow = id; previewNote(p.x, p.y, z); selectOne(p); }
     else if (c && c.type === 'solid') c.mat = id;
-    else if (!c) W.set(p.x, p.y, { type: 'solid', mat: id });
+    else if (!c) W.set(p.x, p.y, z, { type: 'solid', mat: id });
     draw(); return;
   }
   if (c) {
     if (dragging) return;
-    if (tool === 'repeater' && c.type === 'repeater') { c.dir = (c.dir + 1) % 4; S.rot = c.dir; updateRotate(); }
-    else if (tool === 'torch' && c.type === 'torch') { c.dir = (c.dir + 1) % 4; }
+    if (tool === 'note' && c.type === 'solid') {
+      // Empilement : le matériau passe dessous, le bloc musical se pose dessus
+      if (!W.get(p.x, p.y, z - 1)) W.set(p.x, p.y, z - 1, c);
+      W.set(p.x, p.y, z, { type: 'note', clicks: 0 });
+      previewNote(p.x, p.y, z);
+    }
+    else if (tool === 'repeater' && c.type === 'repeater') { c.dir = (c.dir + 1) % 4; S.rot = c.dir; updateRotate(); }
+    else if (tool === 'torch' && c.type === 'torch') { c.dir = c.dir === 5 ? 0 : c.dir === 3 ? 5 : c.dir + 1; }
     else if (tool === 'lever' && c.type === 'lever') { c.on = !c.on; }
-    S.sel = p; openInspector(); draw(); return;
+    selectOne(p); draw(); return;
   }
   const n = ghostCell(p.x, p.y); if (!n) return;
-  W.set(p.x, p.y, n);
-  if (n.type === 'note') { previewNote(n); S.sel = p; openInspector(); }
-  else if (!dragging && n.type !== 'dust') { S.sel = p; openInspector(); }
+  W.set(p.x, p.y, z, n);
+  if (n.type === 'note') {
+    if (S.lastBelow && !W.get(p.x, p.y, z - 1) && S.mode === 'simple') W.set(p.x, p.y, z - 1, { type: 'solid', mat: S.lastBelow });
+    previewNote(p.x, p.y, z); selectOne(p);
+  }
+  else if (!dragging && n.type !== 'dust') selectOne(p);
   draw();
 }
 
-function previewNote(c) { playNote(instrumentOf(c), midiOf(c)); }
-
 // ---------- Inspecteur ----------
 const insp = $('#inspector');
-function closeInspector() { insp.hidden = true; insp.innerHTML = ''; }
+function closeInspector() { if (!insp.hidden) { insp.hidden = true; insp.innerHTML = ''; } }
 
 function openInspector() {
-  if (!S.sel) return closeInspector();
-  const { x, y } = S.sel, c = S.world.get(x, y);
+  if (!S.sel || !isSingle()) return closeInspector();
+  const x = S.sel.x0, y = S.sel.y0, z = L(), c = S.world.get(x, y, z);
   if (!c) return closeInspector();
   insp.hidden = false;
-  const k = S.world.k(x, y);
+  const k = S.world.k(x, y, z);
   const head = (t) => `<h3><span>${t}</span><button data-x="close" aria-label="Fermer">✕</button></h3>`;
   let h = '';
   switch (c.type) {
     case 'note': {
-      const ins = INSTRUMENTS[instrumentOf(c)], midi = midiOf(c);
+      const below = S.world.get(x, y, z - 1);
+      const instr = instrumentFromBelow(below), ins = INSTRUMENTS[instr], midi = midiFor(instr, c.clicks);
+      const belowVal = below?.type === 'solid' ? below.mat : below ? '_other' : '';
       h = head('Bloc musical') +
         `<div class="bignote">${noteName(midi, S.prefs.lang)}</div>
          <div class="sub">${ins.name} · ${c.clicks || 0} clic${(c.clicks || 0) > 1 ? 's' : ''}</div>
+         ${S.world.get(x, y, z + 1) ? '<p class="warn">⚠ Un bloc est posé au-dessus : ce bloc musical ne peut pas jouer.</p>' : ''}
          <div class="stepper"><button data-x="cl-">−</button><span>${c.clicks || 0} / 24</span><button data-x="cl+">+</button></div>
          <label class="field">Hauteur (25 notes, deux octaves)</label>
          <div class="pitchgrid">${Array.from({ length: 25 }, (_, i) => {
-           const m = ins.base + i, nm = noteName(m, S.prefs.lang);
+           const nm = noteName(ins.base + i, S.prefs.lang);
            return `<button data-x="pitch" data-v="${i}" class="${nm.includes('♯') ? 'sharp' : ''} ${i === (c.clicks || 0) ? 'on' : ''}">${nm}<small>${i}</small></button>`;
          }).join('')}</div>
          <label class="field">Bloc dessous (instrument)</label>
-         <select data-x="below">${MATERIALS.map(m => `<option value="${m.id}" ${m.id === (c.below || 'dirt') ? 'selected' : ''}>${m.name} — ${INSTRUMENTS[m.instr].name}</option>`).join('')}</select>
+         <select data-x="below">
+           <option value="" ${belowVal === '' ? 'selected' : ''}>Rien / terre — Harpe</option>
+           ${belowVal === '_other' ? `<option value="_other" selected>Autre bloc — ${ins.name}</option>` : ''}
+           ${MATERIALS.filter(m => m.id !== 'dirt').map(m => `<option value="${m.id}" ${m.id === belowVal ? 'selected' : ''}>${m.name} — ${INSTRUMENTS[m.instr].name}</option>`).join('')}
+           <option value="dirt" ${belowVal === 'dirt' ? 'selected' : ''}>Terre (bloc) — Harpe</option>
+         </select>
          <button class="btn-main" data-x="hear">♪ Écouter</button>
          <p class="hint">Dans le jeu : clic droit sur le bloc musical ${c.clicks || 0} fois.${ins.perc ? ' Les percussions changent de « grain » plutôt que de note.' : ''}</p>`;
       break;
@@ -391,9 +656,10 @@ function openInspector() {
       break;
     case 'torch':
       h = head('Torche de redstone') +
-        `<label class="field">Accrochée au bloc situé</label>
-         <div class="row">${[0, 1, 2, 3].map(d => `<button class="chip ${c.dir === d ? 'on' : ''}" data-x="dir" data-v="${d}">${ARROWS[d]} ${DIRS[d]}</button>`).join('')}</div>
-         <p class="hint">${S.sim.isTorchLit(k) ? 'Allumée' : 'Éteinte'}. La torche s’éteint 1 tick après que son bloc support reçoit du courant : c’est un inverseur.</p>`;
+        `<label class="field">Accrochée</label>
+         <div class="row">${[0, 1, 2, 3].map(d => `<button class="chip ${c.dir === d ? 'on' : ''}" data-x="dir" data-v="${d}">${ARROWS[d]} ${DIRS[d]}</button>`).join('')}
+         <button class="chip wide ${c.dir === 5 || c.dir == null ? 'on' : ''}" data-x="dir" data-v="5">Posée au sol (sur le bloc dessous)</button></div>
+         <p class="hint">${S.sim.isTorchLit(k) ? 'Allumée' : 'Éteinte'}. La torche s’éteint 1 tick après que son bloc support reçoit du courant : c’est un inverseur. Elle alimente fortement le bloc au-dessus d’elle.</p>`;
       break;
     case 'lever':
       h = head('Levier') + `<button class="btn-main" data-x="toggle">${c.on ? 'Mettre à OFF' : 'Mettre à ON'}</button>
@@ -414,12 +680,13 @@ function openInspector() {
       break;
     case 'dust':
       h = head('Poussière de redstone') + `<div class="bignote">${S.sim.dust.get(k) || 0}</div><div class="sub">puissance du signal (0 à 15)</div>
-        <p class="hint">Le signal perd 1 par bloc. La poussière n’alimente que les blocs vers lesquels elle pointe : une ligne qui passe à côté d’un bloc musical ne le fait pas jouer.</p>`;
+        <p class="hint">Le signal perd 1 par bloc. La poussière alimente le bloc sous elle et les blocs vers lesquels elle pointe : une ligne qui passe à côté d’un bloc musical ne le fait pas jouer.${S.mode === 'advanced' ? ' Elle peut monter ou descendre d’un étage (▲ ▼), sauf si un bloc plein est posé au-dessus d’elle.' : ''}</p>`;
       break;
     case 'rblock':
       h = head('Bloc de redstone') + `<p class="hint">Source permanente de puissance 15 dans toutes les directions.</p>`;
       break;
   }
+  if (S.mode === 'advanced') h += `<p class="hint">Étage ${z > 0 ? '+' + z : z}.</p>`;
   h += `<button class="danger" data-x="delete">Supprimer ce bloc</button>`;
   insp.innerHTML = h;
 }
@@ -427,29 +694,37 @@ function openInspector() {
 insp.addEventListener('click', e => {
   const b = e.target.closest('[data-x]'); if (!b || b.tagName === 'SELECT') return;
   const act = b.dataset.x, v = b.dataset.v;
-  if (act === 'close') { S.sel = null; closeInspector(); draw(); return; }
-  const { x, y } = S.sel, c = S.world.get(x, y); if (!c) return;
-  if (act === 'hear') { previewNote(c); return; }
-  if (act === 'press') { S.sim.pressButton(x, y); if (!S.running) setRunning(true); return; }
+  if (act === 'close') { S.sel = null; refreshSelUI(); draw(); return; }
+  const x = S.sel.x0, y = S.sel.y0, z = L(), c = S.world.get(x, y, z); if (!c) return;
+  if (act === 'hear') { previewNote(x, y, z); return; }
+  if (act === 'press') { S.sim.pressButton(x, y, z); if (!S.running) setRunning(true); return; }
   pushHist();
   switch (act) {
-    case 'cl-': c.clicks = Math.max(0, (c.clicks || 0) - 1); previewNote(c); break;
-    case 'cl+': c.clicks = ((c.clicks || 0) + 1) % 25; previewNote(c); break;
-    case 'pitch': c.clicks = +v; previewNote(c); break;
+    case 'cl-': c.clicks = Math.max(0, (c.clicks || 0) - 1); previewNote(x, y, z); break;
+    case 'cl+': c.clicks = ((c.clicks || 0) + 1) % 25; previewNote(x, y, z); break;
+    case 'pitch': c.clicks = +v; previewNote(x, y, z); break;
     case 'delay': c.delay = +v; break;
     case 'dir': c.dir = +v; if (c.type === 'repeater') { S.rot = +v; updateRotate(); } break;
     case 'toggle': c.on = !c.on; break;
     case 'kind': c.kind = v; break;
-    case 'delete': S.world.del(x, y); S.sel = null; closeInspector(); changed(); return;
+    case 'delete':
+      S.world.del(x, y, z);
+      if (S.mode === 'simple' && c.type === 'note') S.world.del(x, y, z - 1);
+      S.sel = null; refreshSelUI(); changed(); return;
   }
   openInspector(); changed();
 });
 insp.addEventListener('change', e => {
-  const sel = e.target.closest('select[data-x]'); if (!sel || !S.sel) return;
-  const c = S.world.get(S.sel.x, S.sel.y); if (!c) return;
+  const s = e.target.closest('select[data-x]'); if (!s || !S.sel) return;
+  const x = S.sel.x0, y = S.sel.y0, z = L(), c = S.world.get(x, y, z); if (!c) return;
+  if (s.value === '_other') return;
   pushHist();
-  if (sel.dataset.x === 'below') { c.below = sel.value; S.lastBelow = sel.value; previewNote(c); }
-  if (sel.dataset.x === 'mat') c.mat = sel.value;
+  if (s.dataset.x === 'below') {
+    if (s.value) { S.world.set(x, y, z - 1, { type: 'solid', mat: s.value }); S.lastBelow = s.value; }
+    else { S.world.del(x, y, z - 1); S.lastBelow = null; }
+    previewNote(x, y, z);
+  }
+  if (s.dataset.x === 'mat') c.mat = s.value;
   openInspector(); changed();
 });
 
@@ -461,6 +736,7 @@ $('#edition').addEventListener('change', e => {
   S.edition = e.target.value; changed();
   status(S.edition === 'bedrock' ? 'Bedrock (Bêta) : la simulation utilise pour l’instant les règles Java. Les différences arrivent avec les pistons.' : 'Java Edition sélectionnée.');
 });
+$('#mode').addEventListener('change', e => setMode(e.target.value));
 $('#theme').innerHTML = Object.entries(THEMES).map(([k, t]) => `<option value="${k}">${t.name}</option>`).join('');
 $('#theme').addEventListener('change', e => { S.theme = e.target.value; changed(); });
 const savePrefs = () => { store.set(PREFS, S.prefs); draw(); if (!insp.hidden) openInspector(); };
@@ -536,7 +812,7 @@ $('#rotate').onclick = () => { S.rot = (S.rot + 1) % 4; updateRotate(); draw(); 
 // ▶ depuis le début (tick 0) : appuie aussi sur tous les boutons, comme un départ.
 $('#play').onclick = () => {
   audio();
-  if (!S.running && S.sim.tick === 0) for (const [x, y, c] of S.world.each()) if (c.type === 'button') S.sim.pressButton(x, y);
+  if (!S.running && S.sim.tick === 0) for (const [x, y, z, c] of S.world.each()) if (c.type === 'button') S.sim.pressButton(x, y, z);
   setRunning(!S.running);
 };
 $('#stop').onclick = () => { setRunning(false); S.sim.reset(); updateReadout(); draw(); if (!insp.hidden) openInspector(); };
@@ -546,18 +822,31 @@ $('#speed').onchange = e => { S.speed = +e.target.value; };
 // ---------- Clavier ----------
 document.addEventListener('keydown', e => {
   if (e.target.matches('input, select, textarea') || document.querySelector('dialog[open]')) return;
-  const mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
-  if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  const mod = e.ctrlKey || e.metaKey, key = e.key.toLowerCase();
+  if (mod && key === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && key === 'y') { e.preventDefault(); redo(); return; }
+  if (mod && key === 'c') { e.preventDefault(); sel.copy(); return; }
+  if (mod && key === 'x') { e.preventDefault(); sel.move(); return; }
+  if (mod && key === 'v') { e.preventDefault(); sel.paste(); return; }
+  if (mod && key === 'd') { e.preventDefault(); sel.duplicate(); return; }
+  if (mod && key === 'a') { e.preventDefault(); setTool('zone'); S.sel = { x0: 0, y0: 0, x1: S.world.w - 1, y1: S.world.h - 1 }; refreshSelUI(); draw(); return; }
   if (e.key === ' ') { e.preventDefault(); $('#play').click(); }
   else if (e.key === '.') $('#step').click();
-  else if (e.key === 'Escape') { setTool('select'); S.sel = null; closeInspector(); draw(); }
-  else if (e.key.toLowerCase() === 'r') {
-    const c = S.sel && S.world.get(S.sel.x, S.sel.y);
-    if (c && (c.type === 'repeater' || c.type === 'torch')) { pushHist(); c.dir = (c.dir + 1) % 4; openInspector(); changed(); }
+  else if (e.key === 'PageUp' || e.key === ']') { if (S.mode === 'advanced') setLayer(S.layer + 1); }
+  else if (e.key === 'PageDown' || e.key === '[') { if (S.mode === 'advanced') setLayer(S.layer - 1); }
+  else if (e.key === 'Escape') {
+    if (S.paste) endPaste(true);
+    else { S.sel = null; if (S.tool !== 'zone') setTool('select'); refreshSelUI(); draw(); }
+  }
+  else if (key === 'f') { if (S.paste || (S.sel && !isSingle())) sel.turn('flip'); }
+  else if (key === 'r') {
+    if (S.paste || (S.sel && !isSingle())) { sel.turn('rot'); return; }
+    const c = S.sel && S.world.get(S.sel.x0, S.sel.y0, L());
+    if (c && c.type === 'repeater') { pushHist(); c.dir = (c.dir + 1) % 4; openInspector(); changed(); }
+    else if (c && c.type === 'torch') { pushHist(); c.dir = c.dir === 5 ? 0 : c.dir === 3 ? 5 : c.dir + 1; openInspector(); changed(); }
     else { S.rot = (S.rot + 1) % 4; updateRotate(); draw(); }
   }
-  else if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel) { pushHist(); S.world.del(S.sel.x, S.sel.y); S.sel = null; closeInspector(); changed(); }
+  else if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel) sel.remove();
 });
 
 window.addEventListener('resize', () => draw());

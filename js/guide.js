@@ -32,6 +32,13 @@ export function helpHTML() {
     <li>Appuie sur <b>▶</b>. Depuis le début (tick 0), ▶ appuie aussi sur tous les boutons. <b>⏭</b> avance d’un seul tick pour observer le courant.</li>
   </ol>
 
+  <h3>Modes Simple et Avancé</h3>
+  <p><b>Simple</b> (par défaut) : un seul étage. Poser un matériau sur un bloc musical, ou un bloc musical sur un matériau, empile les deux automatiquement : le matériau va dessous et choisit l’instrument.</p>
+  <p><b>Avancé</b> <span class="beta">Bêta</span> : plusieurs étages, comme dans le jeu. Change d’étage avec ▲ ▼ (ou <kbd>Page ↑</kbd> <kbd>Page ↓</kbd>). L’étage du dessous apparaît en transparence. La poussière peut monter ou descendre d’un étage (▲ ▼ sur la poussière), les torches peuvent être posées au sol, et un bloc posé au-dessus d’un bloc musical l’empêche de jouer (✕). Un projet garde tout en passant d’un mode à l’autre.</p>
+
+  <h3>Sélection</h3>
+  <p>Touche un bloc avec l’outil <b>Sélection</b>, ou encadre plusieurs blocs avec l’outil <b>Zone</b>. La barre d’actions permet de <b>copier</b>, <b>coller</b>, <b>déplacer</b>, <b>dupliquer</b>, <b>tourner</b> ↻, <b>retourner</b> ⇋ et <b>supprimer</b>. Pendant un collage, ↻ et ⇋ tournent la copie avant de la poser; tu peux coller plusieurs fois de suite. En mode Avancé, coche « Tous les étages » pour prendre toute la hauteur.</p>
+
   <h3>Instruments selon le bloc dessous</h3>
   <table class="ref"><tr><th>Bloc dessous</th><th>Instrument</th><th>Registre (0 à 24 clics)</th></tr>${rows}</table>
   <p class="muted">Tout autre bloc (ou de l’air) donne la harpe. Chaque clic droit monte d’un demi-ton; après 24 clics, on revient à 0.</p>
@@ -50,17 +57,20 @@ export function helpHTML() {
   <ul>
     <li><b>Poussière</b> : signal de 15 qui perd 1 par bloc. Elle n’alimente que les blocs vers lesquels elle pointe. Un point isolé pointe partout; une ligne pointe dans son axe.</li>
     <li><b>Répéteur</b> : lit son arrière, renvoie un signal plein (15) vers l’avant après 1 à 4 ticks. Une impulsion plus courte que son délai est allongée.</li>
-    <li><b>Torche</b> : s’éteint 1 tick après que le bloc qui la porte reçoit du courant (inverseur). Elle n’alimente pas son propre bloc support.</li>
+    <li><b>Poussière en escalier</b> (mode Avancé) : elle monte sur un bloc ou descend d’un étage, sauf si un bloc plein est posé juste au-dessus d’elle (il « coupe » la montée). Elle alimente aussi le bloc sur lequel elle est posée.</li>
+    <li><b>Torche</b> : murale ou posée au sol. S’éteint 1 tick après que le bloc qui la porte reçoit du courant (inverseur). Elle n’alimente pas son bloc support, mais alimente fortement le bloc au-dessus d’elle.</li>
     <li><b>Bouton</b> : pierre = 10 ticks (1 s), bois = 15 ticks (1,5 s). <b>Levier</b> et <b>bloc de redstone</b> : courant continu.</li>
     <li><b>Bloc plein alimenté</b> : il active les composants qui le touchent (blocs musicaux, répéteurs), mais le courant ne passe pas d’un bloc à l’autre. Le verre et la pierre lumineuse ne conduisent pas.</li>
-    <li><b>Bloc musical</b> : il joue une seule fois, au moment où il reçoit du courant. Pour rejouer, le courant doit s’éteindre puis revenir.</li>
+    <li><b>Levier et bouton</b> : posés au sol, ils alimentent fortement le bloc sur lequel ils sont posés.</li>
+    <li><b>Bloc musical</b> : il joue une seule fois, au moment où il reçoit du courant. Pour rejouer, le courant doit s’éteindre puis revenir. Il ne joue pas si un bloc est posé juste au-dessus de lui.</li>
   </ul>
 
   <h3>Java ou Bedrock</h3>
   <p>Les éléments de cette version (poussière, répéteur, torche, bouton, levier) se comportent de la même façon dans les deux éditions pour la musique. Les vraies différences (pistons, quasi-connectivité, slime) arriveront avec ces blocs. L’option Bedrock est marquée <b>Bêta</b> en attendant.</p>
 
   <h3>Raccourcis</h3>
-  <p><kbd>Espace</kbd> jouer/pause · <kbd>.</kbd> tick suivant · <kbd>R</kbd> tourner · <kbd>Suppr</kbd> effacer la sélection · <kbd>Ctrl</kbd>+<kbd>Z</kbd> annuler · <kbd>Échap</kbd> outil Sélection · clic droit = effacer.</p>
+  <p><kbd>Espace</kbd> jouer/pause · <kbd>.</kbd> tick suivant · <kbd>R</kbd> tourner · <kbd>Suppr</kbd> effacer la sélection · <kbd>Ctrl</kbd>+<kbd>Z</kbd> annuler · <kbd>Échap</kbd> annuler / désélectionner · clic droit = effacer.<br>
+  <kbd>Ctrl</kbd>+<kbd>C</kbd> copier · <kbd>Ctrl</kbd>+<kbd>X</kbd> déplacer · <kbd>Ctrl</kbd>+<kbd>V</kbd> coller · <kbd>Ctrl</kbd>+<kbd>D</kbd> dupliquer · <kbd>Ctrl</kbd>+<kbd>A</kbd> tout sélectionner · <kbd>R</kbd> tourner · <kbd>F</kbd> retourner · <kbd>Page ↑</kbd> <kbd>Page ↓</kbd> changer d’étage.</p>
 
   <h3>À propos</h3>
   <p class="muted">Outil non officiel, sans lien avec Mojang ni Microsoft. Les sons et les images sont créés pour cette app : ce sont des imitations, pas les fichiers du jeu.</p>`;

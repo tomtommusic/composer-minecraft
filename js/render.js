@@ -2,9 +2,9 @@
 // Les états allumé/éteint ne reposent jamais seulement sur la couleur :
 // halo lumineux, contour blanc, rayons, traits pleins vs pointillés.
 
-import { MAT, noteName, midiOf, INSTRUMENTS, instrumentOf } from './data.js';
+import { MAT, noteName, midiFor, INSTRUMENTS, instrumentFromBelow } from './data.js';
 
-const DX = [0, 1, 0, -1], DY = [-1, 0, 1, 0];
+const DX = [0, 1, 0, -1, 0, 0], DY = [-1, 0, 1, 0, 0, 0];
 
 export function hash(x, y, i = 0) {
   let h = (x * 374761393 + y * 668265263 + i * 2246822519) | 0;
@@ -139,13 +139,21 @@ export function drawCell(g, c, x, y, s, st = {}) {
       break;
     }
     case 'note': {
-      // Anneau extérieur = le bloc posé dessous (instrument)
-      drawMaterial(g, c.below || 'dirt', px, py, s, hash(x, y) % 97);
+      // Anneau extérieur = le bloc situé dessous (il choisit l'instrument)
+      const below = st.below;
+      if (below && below.type === 'solid') drawMaterial(g, below.mat, px, py, s, hash(x, y) % 97);
+      else if (below && below.type === 'note') texture(g, px, py, s, ['#6b4426', '#5a3820', '#7a5030'], 11, 4);
+      else { g.fillStyle = '#4a3020'; g.fillRect(px, py, s, s); }
       const b = s * 0.15;
       texture(g, px + b, py + b, s - 2 * b, ['#6b4426', '#5a3820', '#7a5030'], hash(x, y, 4) % 50, 5);
       g.strokeStyle = '#1d120a'; g.lineWidth = Math.max(1.5, s * .045); g.strokeRect(px + b, py + b, s - 2 * b, s - 2 * b);
       noteGlyph(g, cx, cy - s * .1, s * .26, st.flash > 0 ? '#ffffff' : '#f1dfb8');
-      if (st.showNames !== false) pill(g, noteName(midiOf(c), st.lang), cx, py + s * .8, s);
+      const instr = instrumentFromBelow(below);
+      if (st.showNames !== false) pill(g, noteName(midiFor(instr, c.clicks), st.lang), cx, py + s * .8, s);
+      if (st.blocked) { // un bloc posé au-dessus empêche la note de jouer
+        g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(2, s * .06);
+        g.beginPath(); g.moveTo(px + s * .2, py + s * .2); g.lineTo(px + s * .8, py + s * .62); g.moveTo(px + s * .8, py + s * .2); g.lineTo(px + s * .2, py + s * .62); g.stroke();
+      }
       if (st.flash > 0) {
         g.strokeStyle = `rgba(255,255,255,${st.flash})`; g.lineWidth = s * .12 * st.flash + 2;
         g.strokeRect(px + 2, py + 2, s - 4, s - 4);
@@ -168,6 +176,7 @@ export function drawCell(g, c, x, y, s, st = {}) {
       g.setLineDash([]);
       g.fillStyle = shade; g.beginPath(); g.arc(cx, cy, w * .9, 0, Math.PI * 2); g.fill();
       if (on) { glow(g, cx, cy, s * .45, 'rgba(255,60,30,.35)'); g.fillStyle = '#fff'; g.beginPath(); g.arc(cx, cy, w * .3, 0, Math.PI * 2); g.fill(); }
+      for (const [d, dz] of st.vert || []) pill(g, dz > 0 ? '▲' : '▼', cx + DX[d] * s * .33, cy + DY[d] * s * .33, s * .62);
       if (st.showPower && on) pill(g, String(lvl), px + s * .78, py + s * .2, s * .8);
       break;
     }
@@ -189,11 +198,17 @@ export function drawCell(g, c, x, y, s, st = {}) {
       break;
     }
     case 'torch': {
-      // Attachée au bloc dans la direction c.dir
-      const ax = cx + DX[c.dir] * s * .5, ay = cy + DY[c.dir] * s * .5;
-      const tx = cx - DX[c.dir] * s * .08, ty = cy - DY[c.dir] * s * .08;
-      g.strokeStyle = '#7a5530'; g.lineWidth = s * .14; g.lineCap = 'round';
-      g.beginPath(); g.moveTo(ax, ay); g.lineTo(tx, ty); g.stroke(); g.lineCap = 'butt';
+      // Murale (c.dir 0-3 = côté du bloc support) ou posée au sol (c.dir 5)
+      const wall = c.dir != null && c.dir < 4;
+      const tx = wall ? cx - DX[c.dir] * s * .08 : cx, ty = wall ? cy - DY[c.dir] * s * .08 : cy;
+      g.strokeStyle = '#7a5530'; g.lineCap = 'round';
+      if (wall) {
+        g.lineWidth = s * .14;
+        g.beginPath(); g.moveTo(cx + DX[c.dir] * s * .5, cy + DY[c.dir] * s * .5); g.lineTo(tx, ty); g.stroke();
+      } else {
+        g.fillStyle = '#7a5530'; g.fillRect(cx - s * .09, cy - s * .09, s * .18, s * .18);
+      }
+      g.lineCap = 'butt';
       if (st.lit) {
         glow(g, tx, ty, s * .5, 'rgba(255,90,40,.55)');
         g.strokeStyle = '#fff3b0'; g.lineWidth = Math.max(1.5, s * .05);
@@ -250,4 +265,3 @@ export function iconCanvas(item, size = 44) {
   return cv;
 }
 
-export { INSTRUMENTS, instrumentOf };
