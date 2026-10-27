@@ -90,10 +90,8 @@ function buildPalette() {
   updateRotate();
 }
 
-function setTouch() {
-  const free = S.tool === 'select' || !!S.paste;
-  wrap.style.touchAction = canvas.style.touchAction = free ? 'auto' : 'none';
-}
+// Les gestes tactiles sont gérés par l'app (1 doigt = outil, 2 doigts = déplacer / zoomer)
+function setTouch() { canvas.style.touchAction = 'none'; }
 
 function setTool(id) {
   if (S.paste) endPaste(true);
@@ -101,7 +99,7 @@ function setTool(id) {
   if (!['select', 'zone'].includes(id) && S.sel && !isSingle()) S.sel = null;
   setTouch(); buildPalette(); refreshSelUI(); draw();
   const hints = {
-    select: 'Touche un bloc pour le régler. Touche un levier ou un bouton pour l’actionner.',
+    select: 'Touche un bloc pour le régler, un levier ou un bouton pour l’actionner. Glisse pour te déplacer.',
     zone: 'Glisse pour encadrer plusieurs blocs, puis copie, déplace, tourne…',
     erase: 'Touche ou glisse pour effacer.',
     note: 'Pose un bloc musical (aussi sur un matériau : il se place dessus), puis choisis sa note.',
@@ -518,41 +516,101 @@ function cellAt(e) {
   return S.world.inside(x, y) ? { x, y } : null;
 }
 
-let drag = null;
+let drag = null, gesture = null;
+const touches = new Map(); // doigts posés : id -> { x, y }
+
+// Zoom en gardant le point (cx, cy) de l'écran au même endroit
+function zoomAt(size, cx, cy) {
+  size = Math.max(24, Math.min(80, Math.round(size)));
+  if (size === S.size) return;
+  const r = wrap.getBoundingClientRect();
+  const wx = (wrap.scrollLeft + cx - r.left) / S.size, wy = (wrap.scrollTop + cy - r.top) / S.size;
+  S.size = size; resize();
+  wrap.scrollLeft = wx * size - (cx - r.left);
+  wrap.scrollTop = wy * size - (cy - r.top);
+}
+
+function twoFingers() {
+  const [a, b] = [...touches.values()];
+  return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) || 1 };
+}
+function startGesture() {
+  const f = twoFingers();
+  gesture = { ...f, sl: wrap.scrollLeft, st: wrap.scrollTop, size: S.size };
+}
+
+canvas.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); }); // pas de défilement auto (Windows)
 canvas.addEventListener('pointerdown', e => {
   audio();
+  if (e.pointerType === 'touch') touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  // Deuxième doigt : on annule le geste en cours et on passe en déplacement / zoom
+  if (touches.size >= 2) {
+    if (drag?.painting && S.hist.length) restore(S.hist.pop());
+    if (drag?.zone) { S.sel = drag.prevSel || null; refreshSelUI(); }
+    drag = null; startGesture(); draw(); return;
+  }
+  canvas.setPointerCapture(e.pointerId);
+  // Molette enfoncée : déplacer le terrain
+  if (e.button === 1) { e.preventDefault(); drag = { pan: true, sx: e.clientX, sy: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop }; canvas.style.cursor = 'grabbing'; return; }
   const p = cellAt(e); if (!p) return;
   if (e.button === 2) { e.preventDefault(); if (!S.paste) { pushHist(); applyTool('erase', p, false); changed(); } return; }
-  if (S.paste || S.tool === 'select') { drag = { tap: true, moved: false, sx: e.clientX, sy: e.clientY }; return; }
-  canvas.setPointerCapture(e.pointerId);
-  if (S.tool === 'zone') { drag = { zone: true, start: p }; S.sel = normRect(p, p); refreshSelUI(); draw(); return; }
+  // Sélection et collage : toucher = agir, glisser = déplacer le terrain
+  if (S.paste || S.tool === 'select') { drag = { tap: true, moved: false, sx: e.clientX, sy: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop }; return; }
+  if (S.tool === 'zone') { drag = { zone: true, start: p, prevSel: S.sel }; S.sel = normRect(p, p); refreshSelUI(); draw(); return; }
   pushHist();
   drag = { last: p, painting: true };
   applyTool(S.tool, p, false);
 });
 canvas.addEventListener('pointermove', e => {
+  if (e.pointerType === 'touch' && touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (gesture) {
+    if (touches.size < 2) return;
+    const f = twoFingers();
+    const ratio = f.d / gesture.d;
+    if (Math.abs(ratio - 1) > 0.06) { zoomAt(gesture.size * ratio, f.mx, f.my); startGesture(); return; }
+    wrap.scrollLeft = gesture.sl - (f.mx - gesture.mx);
+    wrap.scrollTop = gesture.st - (f.my - gesture.my);
+    return;
+  }
+  if (drag?.pan) { wrap.scrollLeft = drag.sl - (e.clientX - drag.sx); wrap.scrollTop = drag.st - (e.clientY - drag.sy); return; }
   const p = cellAt(e);
   if (e.pointerType === 'mouse') {
     const old = S.hover; S.hover = p;
     if (S.paste && p) S.pasteAt = p;
     if (!old || !p || old.x !== p.x || old.y !== p.y) draw();
   }
-  if (!drag || !p) return;
+  if (!drag) return;
+  if (drag.tap) {
+    if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 8) drag.moved = true;
+    if (drag.moved) { wrap.scrollLeft = drag.sl - (e.clientX - drag.sx); wrap.scrollTop = drag.st - (e.clientY - drag.sy); }
+    return;
+  }
+  if (!p) return;
   if (drag.zone) { S.sel = normRect(drag.start, p); draw(); return; }
   if (drag.painting) {
     if (p.x === drag.last.x && p.y === drag.last.y) return;
     if (['dust', 'erase'].includes(S.tool) || S.tool.startsWith('mat:')) applyTool(S.tool, p, true);
     drag.last = p;
-  } else if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 8) drag.moved = true;
+  }
 });
-canvas.addEventListener('pointerup', e => {
-  const p = cellAt(e);
+function endPointer(e, cancelled) {
+  touches.delete(e.pointerId);
+  if (gesture) { if (touches.size < 2) { gesture = null; drag = null; } return; }
+  if (drag?.pan) { drag = null; canvas.style.cursor = ''; return; }
+  const p = cancelled ? null : cellAt(e);
   if (drag?.tap && !drag.moved && p) { if (S.paste) pasteAt(p); else selectAt(p); }
   if (drag?.zone) { refreshSelUI(); draw(); }
   if (drag?.painting) changed();
   drag = null;
-});
-canvas.addEventListener('pointercancel', () => { if (drag?.painting) changed(); if (drag?.zone) refreshSelUI(); drag = null; });
+}
+canvas.addEventListener('pointerup', e => endPointer(e, false));
+canvas.addEventListener('pointercancel', e => endPointer(e, true));
+// Ctrl + molette (ou pincement du pavé tactile) : zoom
+wrap.addEventListener('wheel', e => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  zoomAt(S.size * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+}, { passive: false });
 canvas.addEventListener('pointerleave', () => { if (S.hover) { S.hover = null; draw(); } });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
@@ -804,8 +862,9 @@ function openDialog() {
 
 $('#helpBtn').onclick = () => { $('#helpBody').innerHTML = helpHTML(); wireHelp($('#helpBody')); $('#dlgHelp').showModal(); $('#dlgHelp').scrollTop = 0; document.activeElement?.blur(); };
 $('#undo').onclick = undo; $('#redo').onclick = redo;
-$('#zoomIn').onclick = () => { S.size = Math.min(80, S.size + 8); resize(); };
-$('#zoomOut').onclick = () => { S.size = Math.max(24, S.size - 8); resize(); };
+const zoomCenter = d => { const r = wrap.getBoundingClientRect(); zoomAt(S.size + d, r.left + r.width / 2, r.top + r.height / 2); };
+$('#zoomIn').onclick = () => zoomCenter(8);
+$('#zoomOut').onclick = () => zoomCenter(-8);
 $('#rotate').onclick = () => { S.rot = (S.rot + 1) % 4; updateRotate(); draw(); };
 
 // ---------- Transport ----------
