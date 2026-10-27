@@ -113,6 +113,7 @@ button { cursor: pointer; }
   flex: 1; min-width: 44px; background: var(--panel-2); border: 2px solid var(--line); border-radius: 8px; padding: 8px 6px; font-weight: 600;
 }
 .chip.on { background: var(--accent-2); color: #111; border-color: #000; }
+.chip:disabled { opacity: .35; cursor: default; }
 .chip.wide { flex-basis: 100%; }
 .danger { background: transparent; border: 1px solid #7a2a24; color: #ffb4ab; border-radius: 8px; padding: 8px 12px; margin-top: 16px; width: 100%; }
 .pitchgrid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }

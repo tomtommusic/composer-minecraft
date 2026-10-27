@@ -474,7 +474,7 @@ function refreshSelUI() {
     selbar.hidden = false;
     selbar.innerHTML = `<span class="sb-label">Presse-papiers : ${S.clip.cells.length} bloc${S.clip.cells.length > 1 ? 's' : ''}</span><button data-s="paste">Coller</button>`;
   } else selbar.hidden = true;
-  if (S.sel && isSingle() && S.world.get(S.sel.x0, S.sel.y0, L()) && !S.paste) openInspector(); else closeInspector();
+  if (S.sel && !S.paste && (!isSingle() || S.world.get(S.sel.x0, S.sel.y0, L()))) openInspector(); else closeInspector();
 }
 selbar.addEventListener('click', e => {
   const b = e.target.closest('button[data-s]'); if (!b) return;
@@ -670,8 +670,89 @@ function applyTool(tool, p, dragging) {
 const insp = $('#inspector');
 function closeInspector() { if (!insp.hidden) { insp.hidden = true; insp.innerHTML = ''; } }
 
+// ---------- Inspecteur de sélection multiple ----------
+function selCells(type) {
+  const out = [], z = L(), r = S.sel; if (!r) return out;
+  for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) {
+    const c = S.world.get(x, y, z); if (c && c.type === type) out.push({ x, y, z, c });
+  }
+  return out;
+}
+
+function playChord(notes) {
+  for (const n of notes.slice(0, 10)) { const i = instrAt(n.x, n.y, n.z); playNote(i, midiFor(i, n.c.clicks)); }
+}
+
+function openMulti() {
+  const notes = selCells('note'), reps = selCells('repeater');
+  if (!notes.length && !reps.length) return closeInspector();
+  insp.hidden = false;
+  let h = `<h3><span>Sélection multiple</span><button data-x="close" aria-label="Fermer">✕</button></h3>`;
+  if (notes.length) {
+    const clicks = notes.map(n => n.c.clicks || 0), lo = Math.min(...clicks), hi = Math.max(...clicks);
+    const instrs = [...new Set(notes.map(n => instrAt(n.x, n.y, n.z)))];
+    const one = instrs.length === 1 ? instrs[0] : null;
+    const range = one ? `${noteName(midiFor(one, lo), S.prefs.lang)} à ${noteName(midiFor(one, hi), S.prefs.lang)}` : `${lo} à ${hi} clics`;
+    const base = INSTRUMENTS[one || 'harp'].base;
+    h += `<div class="bignote">${notes.length} bloc${notes.length > 1 ? 's' : ''} musica${notes.length > 1 ? 'ux' : 'l'}</div>
+      <div class="sub">${one ? INSTRUMENTS[one].name : instrs.length + ' instruments'} · ${range}</div>
+      <label class="field">Transposer (garde les intervalles)</label>
+      <div class="row">
+        <button class="chip" data-m="tr" data-v="-12" ${lo < 12 ? 'disabled' : ''}>−8ve</button>
+        <button class="chip" data-m="tr" data-v="-1" ${lo < 1 ? 'disabled' : ''}>−½ ton</button>
+        <button class="chip" data-m="tr" data-v="1" ${hi > 23 ? 'disabled' : ''}>+½ ton</button>
+        <button class="chip" data-m="tr" data-v="12" ${hi > 12 ? 'disabled' : ''}>+8ve</button>
+      </div>
+      <p class="hint" style="margin-top:6px">Possible : de −${lo} à +${24 - hi} demi-tons.</p>
+      <label class="field">Mettre toutes à la même note${one ? '' : ' (clics)'}</label>
+      <div class="pitchgrid">${Array.from({ length: 25 }, (_, i) => {
+        const nm = noteName(base + i, S.prefs.lang);
+        const all = lo === hi && lo === i;
+        return `<button data-m="set" data-v="${i}" class="${nm.includes('♯') ? 'sharp' : ''} ${all ? 'on' : ''}">${one ? nm : i}<small>${one ? i : ''}</small></button>`;
+      }).join('')}</div>
+      <label class="field">Bloc dessous de toutes (instrument)</label>
+      <select data-m="below">
+        <option value="_keep" selected>— garder tel quel —</option>
+        <option value="">Rien / terre — Harpe</option>
+        ${MATERIALS.filter(m => m.id !== 'dirt').map(m => `<option value="${m.id}">${m.name} — ${INSTRUMENTS[m.instr].name}</option>`).join('')}
+      </select>
+      <button class="btn-main" data-m="hear">♪ Écouter ensemble</button>`;
+  }
+  if (reps.length) {
+    const ds = new Set(reps.map(r => r.c.delay || 1));
+    h += `<label class="field">Délai des ${reps.length} répéteur${reps.length > 1 ? 's' : ''}</label>
+      <div class="row">${[1, 2, 3, 4].map(d => `<button class="chip ${ds.size === 1 && ds.has(d) ? 'on' : ''}" data-m="delay" data-v="${d}">${d} tick${d > 1 ? 's' : ''}</button>`).join('')}</div>`;
+  }
+  h += `<p class="hint">Les changements touchent ${S.mode === 'advanced' ? 'l’étage affiché' : 'tous les blocs encadrés'}. Annulable avec ↶.</p>`;
+  insp.innerHTML = h;
+}
+
+function multiAction(act, v) {
+  const notes = selCells('note');
+  if (act === 'hear') { playChord(notes); return; }
+  pushHist();
+  if (act === 'tr') {
+    const d = +v;
+    if (notes.some(n => (n.c.clicks || 0) + d < 0 || (n.c.clicks || 0) + d > 24)) { S.hist.pop(); status('Impossible : certaines notes sortiraient des deux octaves.'); return; }
+    notes.forEach(n => { n.c.clicks = (n.c.clicks || 0) + d; });
+    playChord(notes);
+  } else if (act === 'set') {
+    notes.forEach(n => { n.c.clicks = +v; });
+    if (notes[0]) previewNote(notes[0].x, notes[0].y, notes[0].z);
+  } else if (act === 'delay') {
+    selCells('repeater').forEach(r => { r.c.delay = +v; });
+  } else if (act === 'below') {
+    if (v === '_keep') { S.hist.pop(); return; }
+    notes.forEach(n => { if (v) S.world.set(n.x, n.y, n.z - 1, { type: 'solid', mat: v }); else S.world.del(n.x, n.y, n.z - 1); });
+    if (v) S.lastBelow = v;
+    playChord(notes);
+  }
+  openInspector(); changed();
+}
+
 function openInspector() {
-  if (!S.sel || !isSingle()) return closeInspector();
+  if (!S.sel) return closeInspector();
+  if (!isSingle()) return openMulti();
   const x = S.sel.x0, y = S.sel.y0, z = L(), c = S.world.get(x, y, z);
   if (!c) return closeInspector();
   insp.hidden = false;
@@ -750,6 +831,8 @@ function openInspector() {
 }
 
 insp.addEventListener('click', e => {
+  const m = e.target.closest('button[data-m]');
+  if (m) { if (!m.disabled) multiAction(m.dataset.m, m.dataset.v); return; }
   const b = e.target.closest('[data-x]'); if (!b || b.tagName === 'SELECT') return;
   const act = b.dataset.x, v = b.dataset.v;
   if (act === 'close') { S.sel = null; refreshSelUI(); draw(); return; }
@@ -773,6 +856,8 @@ insp.addEventListener('click', e => {
   openInspector(); changed();
 });
 insp.addEventListener('change', e => {
+  const ms = e.target.closest('select[data-m]');
+  if (ms) { multiAction(ms.dataset.m, ms.value); return; }
   const s = e.target.closest('select[data-x]'); if (!s || !S.sel) return;
   const x = S.sel.x0, y = S.sel.y0, z = L(), c = S.world.get(x, y, z); if (!c) return;
   if (s.value === '_other') return;
