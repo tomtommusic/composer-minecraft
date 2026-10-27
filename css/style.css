@@ -70,10 +70,10 @@ button { cursor: pointer; }
 
 /* ---------- Plan de travail ---------- */
 .workarea { position: relative; flex: 1; min-height: 0; display: flex; }
-.stage-wrap { flex: 1; overflow: auto; background: #0c0f12; overscroll-behavior: contain; }
-#stage { display: block; image-rendering: pixelated; box-shadow: 0 0 0 2px #000, 0 0 40px rgba(0,0,0,.6); }
+.stage-wrap { flex: 1; position: relative; overflow: hidden; background: #0c0f12; overscroll-behavior: contain; }
+#stage { position: absolute; left: 0; top: 0; display: block; image-rendering: pixelated; will-change: transform; box-shadow: 0 0 0 2px #000, 0 0 40px rgba(0,0,0,.6); }
 .stage-pad {
-  display: inline-block; vertical-align: top;
+  position: absolute; inset: 0; overflow: hidden; touch-action: none;
   background-color: #0c0f12;
   background-image: radial-gradient(rgba(255,255,255,.07) 1px, transparent 1.5px);
   background-size: 22px 22px;

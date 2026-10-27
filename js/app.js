@@ -1,8 +1,8 @@
-import { MATERIALS, MAT, INSTRUMENTS, noteName, midiFor, instrumentFromBelow } from './data.js?v=0.2.4';
-import { World, Sim, DX, DY, ZMIN, ZMAX, isConductive } from './engine.js?v=0.2.4';
-import { drawBackground, drawCell, iconCanvas, THEMES } from './render.js?v=0.2.4';
-import { audio, playNote } from './sound.js?v=0.2.4';
-import { helpHTML, wireHelp } from './guide.js?v=0.2.4';
+import { MATERIALS, MAT, INSTRUMENTS, noteName, midiFor, instrumentFromBelow } from './data.js?v=0.2.5';
+import { World, Sim, DX, DY, ZMIN, ZMAX, isConductive } from './engine.js?v=0.2.5';
+import { drawBackground, drawCell, iconCanvas, THEMES } from './render.js?v=0.2.5';
+import { audio, playNote } from './sound.js?v=0.2.5';
+import { helpHTML, wireHelp } from './guide.js?v=0.2.5';
 
 const $ = s => document.querySelector(s);
 const DIRS = ['Nord', 'Est', 'Sud', 'Ouest'];
@@ -235,15 +235,29 @@ function updateReadout() {
 }
 
 // ---------- Dessin ----------
-// Marge autour du terrain : on peut le déplacer au-delà de ses bords
-const pad = () => ({ x: Math.round(wrap.clientWidth * 0.9), y: Math.round(wrap.clientHeight * 0.9) });
+// Caméra : le terrain se déplace librement dans toutes les directions.
+// view.x / view.y = décalage (en pixels) du coin du terrain par rapport au coin visible.
+const view = {
+  _x: 0, _y: 0,
+  get x() { return this._x; }, set x(v) { this._x = v; applyView(); },
+  get y() { return this._y; }, set y(v) { this._y = v; applyView(); },
+};
+function applyView() {
+  // garder au moins un petit morceau du terrain à l'écran
+  const W = S.world.w * S.size, H = S.world.h * S.size, keep = 48;
+  view._x = Math.max(-(wrap.clientWidth - keep), Math.min(W - keep, view._x));
+  view._y = Math.max(-(wrap.clientHeight - keep), Math.min(H - keep, view._y));
+  canvas.style.transform = `translate(${-view._x}px, ${-view._y}px)`;
+  $('#stagePad').style.backgroundPosition = `${-view._x}px ${-view._y}px`;
+}
+const pad = () => ({ x: 0, y: 0 });
 
 function resize() {
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const W = S.world.w * S.size, H = S.world.h * S.size;
   canvas.width = W * dpr; canvas.height = H * dpr;
   canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
-  const P = pad(); $('#stagePad').style.padding = `${P.y}px ${P.x}px`;
+  applyView();
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   draw();
 }
@@ -251,8 +265,8 @@ function resize() {
 // Place le coin du terrain (ou la case wx, wy) à (ox, oy) pixels du bord visible
 function scrollToWorld(wx = 0, wy = 0, ox = 16, oy = 16) {
   const P = pad();
-  wrap.scrollLeft = P.x + wx * S.size - ox;
-  wrap.scrollTop = P.y + wy * S.size - oy;
+  view.x = P.x + wx * S.size - ox;
+  view.y = P.y + wy * S.size - oy;
 }
 
 function cellState(x, y, z, c, k) {
@@ -532,10 +546,10 @@ const touches = new Map(); // doigts posés : id -> { x, y }
 
 // Zoom en gardant le point (cx, cy) de l'écran au même endroit
 function zoomAt(size, cx, cy) {
-  size = Math.max(24, Math.min(80, Math.round(size)));
+  size = Math.max(16, Math.min(96, Math.round(size)));
   if (size === S.size) return;
   const r = wrap.getBoundingClientRect(), P = pad();
-  const wx = (wrap.scrollLeft + cx - r.left - P.x) / S.size, wy = (wrap.scrollTop + cy - r.top - P.y) / S.size;
+  const wx = (view.x + cx - r.left - P.x) / S.size, wy = (view.y + cy - r.top - P.y) / S.size;
   S.size = size; resize();
   scrollToWorld(wx, wy, cx - r.left, cy - r.top);
 }
@@ -546,7 +560,7 @@ function twoFingers() {
 }
 function startGesture() {
   const f = twoFingers();
-  gesture = { ...f, sl: wrap.scrollLeft, st: wrap.scrollTop, size: S.size };
+  gesture = { ...f, sl: view.x, st: view.y, size: S.size };
 }
 
 canvas.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); }); // pas de défilement auto (Windows)
@@ -561,11 +575,11 @@ canvas.addEventListener('pointerdown', e => {
   }
   canvas.setPointerCapture(e.pointerId);
   // Molette enfoncée : déplacer le terrain
-  if (e.button === 1) { e.preventDefault(); drag = { pan: true, sx: e.clientX, sy: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop }; canvas.style.cursor = 'grabbing'; return; }
+  if (e.button === 1) { e.preventDefault(); drag = { pan: true, sx: e.clientX, sy: e.clientY, sl: view.x, st: view.y }; canvas.style.cursor = 'grabbing'; return; }
   const p = cellAt(e); if (!p) return;
   if (e.button === 2) { e.preventDefault(); if (!S.paste) { pushHist(); applyTool('erase', p, false); changed(); } return; }
   // Sélection et collage : toucher = agir, glisser = déplacer le terrain
-  if (S.paste || S.tool === 'select') { drag = { tap: true, moved: false, sx: e.clientX, sy: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop }; return; }
+  if (S.paste || S.tool === 'select') { drag = { tap: true, moved: false, sx: e.clientX, sy: e.clientY, sl: view.x, st: view.y }; return; }
   if (S.tool === 'zone') { drag = { zone: true, start: p, prevSel: S.sel }; S.sel = normRect(p, p); refreshSelUI(); draw(); return; }
   pushHist();
   drag = { last: p, painting: true };
@@ -578,11 +592,11 @@ canvas.addEventListener('pointermove', e => {
     const f = twoFingers();
     const ratio = f.d / gesture.d;
     if (Math.abs(ratio - 1) > 0.06) { zoomAt(gesture.size * ratio, f.mx, f.my); startGesture(); return; }
-    wrap.scrollLeft = gesture.sl - (f.mx - gesture.mx);
-    wrap.scrollTop = gesture.st - (f.my - gesture.my);
+    view.x = gesture.sl - (f.mx - gesture.mx);
+    view.y = gesture.st - (f.my - gesture.my);
     return;
   }
-  if (drag?.pan) { wrap.scrollLeft = drag.sl - (e.clientX - drag.sx); wrap.scrollTop = drag.st - (e.clientY - drag.sy); return; }
+  if (drag?.pan) { view.x = drag.sl - (e.clientX - drag.sx); view.y = drag.st - (e.clientY - drag.sy); return; }
   const p = cellAt(e);
   if (e.pointerType === 'mouse') {
     const old = S.hover; S.hover = p;
@@ -592,7 +606,7 @@ canvas.addEventListener('pointermove', e => {
   if (!drag) return;
   if (drag.tap) {
     if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 8) drag.moved = true;
-    if (drag.moved) { wrap.scrollLeft = drag.sl - (e.clientX - drag.sx); wrap.scrollTop = drag.st - (e.clientY - drag.sy); }
+    if (drag.moved) { view.x = drag.sl - (e.clientX - drag.sx); view.y = drag.st - (e.clientY - drag.sy); }
     return;
   }
   if (!p) return;
@@ -622,11 +636,11 @@ padEl.style.touchAction = 'none';
 padEl.addEventListener('pointerdown', e => {
   if (e.target === canvas) return;
   padEl.setPointerCapture(e.pointerId);
-  padPan = { id: e.pointerId, sx: e.clientX, sy: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop, moved: false };
+  padPan = { id: e.pointerId, sx: e.clientX, sy: e.clientY, sl: view.x, st: view.y, moved: false };
 });
 padEl.addEventListener('pointermove', e => {
   if (!padPan || e.pointerId !== padPan.id) return;
-  wrap.scrollLeft = padPan.sl - (e.clientX - padPan.sx); wrap.scrollTop = padPan.st - (e.clientY - padPan.sy);
+  view.x = padPan.sl - (e.clientX - padPan.sx); view.y = padPan.st - (e.clientY - padPan.sy);
 });
 const endPad = e => {
   if (!padPan || e.pointerId !== padPan.id) return;
@@ -637,11 +651,13 @@ const endPad = e => {
 padEl.addEventListener('pointerup', endPad);
 padEl.addEventListener('pointercancel', endPad);
 
-// Ctrl + molette (ou pincement du pavé tactile) : zoom
+// Molette : zoom vers la souris. Pavé tactile : deux doigts = déplacer, pincer = zoomer.
 wrap.addEventListener('wheel', e => {
-  if (!e.ctrlKey) return;
   e.preventDefault();
-  zoomAt(S.size * Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+  const k = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1; // lignes / pages -> pixels
+  const dx = e.deltaX * k, dy = e.deltaY * k;
+  if (!e.ctrlKey && Math.abs(dx) > 0.5) { view.x += dx; view.y += dy; return; } // glissement du pavé tactile
+  zoomAt(S.size * Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX, e.clientY);
 }, { passive: false });
 canvas.addEventListener('pointerleave', () => { if (S.hover) { S.hover = null; draw(); } });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -1026,11 +1042,8 @@ document.addEventListener('keydown', e => {
   else if ((e.key === 'Delete' || e.key === 'Backspace') && S.sel) sel.remove();
 });
 
-// Redimensionnement de la fenêtre : garder la même vue
-window.addEventListener('resize', () => {
-  const P = pad(), wx = (wrap.scrollLeft - (parseFloat($('#stagePad').style.paddingLeft) || P.x)) / S.size, wy = (wrap.scrollTop - (parseFloat($('#stagePad').style.paddingTop) || P.y)) / S.size;
-  resize(); scrollToWorld(wx, wy, 0, 0);
-});
+// Redimensionnement de la fenêtre
+window.addEventListener('resize', () => resize());
 
 // ---------- Démarrage ----------
 (function init() {

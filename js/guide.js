@@ -1,5 +1,5 @@
 // Guide intégré (banque d'information). Bêta : le contenu va grandir.
-import { MATERIALS, INSTRUMENTS, noteName } from './data.js?v=0.2.4';
+import { MATERIALS, INSTRUMENTS, noteName } from './data.js?v=0.2.5';
 
 const FIGS = [
   { id: 'dc', name: 'double croche', per: 0.25 },
@@ -69,7 +69,7 @@ export function helpHTML() {
   <p>Les éléments de cette version (poussière, répéteur, torche, bouton, levier) se comportent de la même façon dans les deux éditions pour la musique. Les vraies différences (pistons, quasi-connectivité, slime) arriveront avec ces blocs. L’option Bedrock est marquée <b>Bêta</b> en attendant.</p>
 
   <h3>Raccourcis</h3>
-  <p><b>Se déplacer</b> : glisser avec l’outil Sélection ou dans la marge autour du terrain, molette enfoncée, ou deux doigts sur écran tactile (pincer pour zoomer, ou <kbd>Ctrl</kbd>+molette). Le bouton ⌂ ramène au coin du terrain.<br>
+  <p><b>Se déplacer</b> : glisser avec l’outil Sélection ou en dehors du terrain, molette enfoncée, deux doigts sur écran tactile ou sur le pavé tactile. <b>Zoomer</b> : molette de la souris, ou pincer. Le bouton ⌂ ramène au coin du terrain.<br>
   <kbd>Espace</kbd> jouer/pause · <kbd>.</kbd> tick suivant · <kbd>R</kbd> tourner · <kbd>Suppr</kbd> effacer la sélection · <kbd>Ctrl</kbd>+<kbd>Z</kbd> annuler · <kbd>Échap</kbd> annuler / désélectionner · clic droit = effacer.<br>
   <kbd>Ctrl</kbd>+<kbd>C</kbd> copier · <kbd>Ctrl</kbd>+<kbd>X</kbd> déplacer · <kbd>Ctrl</kbd>+<kbd>V</kbd> coller · <kbd>Ctrl</kbd>+<kbd>D</kbd> dupliquer · <kbd>Ctrl</kbd>+<kbd>A</kbd> tout sélectionner · <kbd>R</kbd> tourner · <kbd>F</kbd> retourner · <kbd>Page ↑</kbd> <kbd>Page ↓</kbd> changer d’étage.</p>
 

@@ -17,7 +17,7 @@
 //  - Bloc musical : joue sur le front montant, seulement si rien n'est posé
 //    au-dessus. L'instrument dépend du bloc situé dessous.
 
-import { BUTTON_TICKS, MAT, instrumentFromBelow } from './data.js?v=0.2.4';
+import { BUTTON_TICKS, MAT, instrumentFromBelow } from './data.js?v=0.2.5';
 
 // 0 Nord, 1 Est, 2 Sud, 3 Ouest, 4 Haut, 5 Bas
 export const DX = [0, 1, 0, -1, 0, 0];

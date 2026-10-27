@@ -1,7 +1,7 @@
 // Sons synthétisés (Web Audio). Ce sont des imitations originales des
 // instruments du bloc musical, pas les enregistrements du jeu.
 
-import { INSTRUMENTS } from './data.js?v=0.2.4';
+import { INSTRUMENTS } from './data.js?v=0.2.5';
 
 let ctx = null, master = null, noiseBuf = null;
 const ksCache = new Map();
